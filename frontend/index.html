@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CookAI - Recomendación de Recetas con IA</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 1.05em;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-input-label {
+            display: block;
+            padding: 12px;
+            background: #f5f5f5;
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .file-input-label:hover {
+            background: #eee;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.05em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            display: none;
+        }
+
+        .results.show {
+            display: block;
+        }
+
+        .results h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .results p {
+            color: #333;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .loading {
+            text-align: center;
+            color: #667eea;
+            font-weight: 600;
+            display: none;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .success {
+            background: #efe;
+            color: #3c3;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .success.show {
+            display: block;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 12px 20px;
+            font-size: 1em;
+            cursor: pointer;
+            color: #999;
+            font-weight: 600;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🍳 CookAI</h1>
+            <p>Recomendación de Recetas con Inteligencia Artificial</p>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('recommend')">Recomendador</button>
+            <button class="tab-btn" onclick="switchTab('upload')">Subir Recetas</button>
+            <button class="tab-btn" onclick="switchTab('chat')">Chat</button>
+        </div>
+
+        <!-- TAB 1: RECOMENDADOR -->
+        <div id="recommend" class="tab-content active">
+            <form id="formRecommend" onsubmit="getRecommendations(event)">
+                <div class="form-group">
+                    <label>🥘 Ingredientes Disponibles</label>
+                    <input type="text" id="ingredientes" placeholder="Ej: tomate, queso, huevo" required>
+                </div>
+
+                <div class="form-group">
+                    <label>⏱️ Tiempo Disponible</label>
+                    <select id="tiempo" required>
+                        <option value="">Selecciona tiempo...</option>
+                        <option value="15 minutos">15 minutos</option>
+                        <option value="30 minutos">30 minutos</option>
+                        <option value="1 hora">1 hora</option>
+                        <option value="sin límite">Sin límite</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>💰 Presupuesto</label>
+                    <select id="presupuesto" required>
+                        <option value="">Selecciona presupuesto...</option>
+                        <option value="bajo">Bajo</option>
+                        <option value="medio">Medio</option>
+                        <option value="alto">Alto</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>🚫 Restricciones Alimentarias (opcional)</label>
+                    <input type="text" id="restricciones" placeholder="Ej: sin gluten, vegetariano">
+                </div>
+
+                <div class="form-group">
+                    <label>🌍 Preferencias de Cocina (opcional)</label>
+                    <input type="text" id="preferencias" placeholder="Ej: italiana, mexicana, asiática">
+                </div>
+
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">🔍 Obtener Recomendaciones</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- TAB 2: SUBIR RECETAS -->
+        <div id="upload" class="tab-content">
+            <form id="formUpload" onsubmit="uploadRecipe(event)">
+                <div class="form-group">
+                    <label>📄 Selecciona un archivo de recetas</label>
+                    <div class="file-input-wrapper">
+                        <label class="file-input-label">
+                            📁 Haz clic para seleccionar o arrastra un archivo
+                            <input type="file" id="recipeFile" accept=".pdf,.txt,.docx,.doc" required>
+                        </label>
+                    </div>
+                    <small style="color: #999; margin-top: 8px; display: block;">
+                        Formatos soportados: PDF, TXT, DOCX, DOC
+                    </small>
+                </div>
+
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">📤 Subir Recetas</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- TAB 3: CHAT -->
+        <div id="chat" class="tab-content">
+            <form id="formChat" onsubmit="sendMessage(event)">
+                <div class="form-group">
+                    <label>💬 Pregunta a CookAI</label>
+                    <textarea id="mensaje" placeholder="Ej: ¿Qué puedo hacer con tomate y cebolla?" required></textarea>
+                </div>
+
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">Enviar</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Indicadores de estado y resultados -->
+        <div class="loading" id="loading">⏳ Procesando...</div>
+        <div class="error" id="error"></div>
+        <div class="success" id="success"></div>
+
+        <div class="results" id="results">
+            <h2>✨ Resultado:</h2>
+            <p id="resultsContent"></p>
+        </div>
+
+        <div class="status" id="status">
+            Esperando entrada...
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "http://localhost:8000";
+
+        function switchTab(tabName) {
+            // Ocultar todos los tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // Mostrar tab seleccionado
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function showLoading(show = true) {
+            document.getElementById('loading').classList.toggle('show', show);
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = message;
+            errorEl.classList.add('show');
+            setTimeout(() => errorEl.classList.remove('show'), 5000);
+        }
+
+        function showSuccess(message) {
+            const successEl = document.getElementById('success');
+            successEl.textContent = message;
+            successEl.classList.add('show');
+            setTimeout(() => successEl.classList.remove('show'), 3000);
+        }
+
+        function showResults(content) {
+            document.getElementById('resultsContent').textContent = content;
+            document.getElementById('results').classList.add('show');
+        }
+
+        async function getRecommendations(event) {
+            event.preventDefault();
+            showLoading(true);
+
+            const data = {
+                ingredientes: document.getElementById('ingredientes').value.split(',').map(i => i.trim()),
+                tiempo_disponible: document.getElementById('tiempo').value,
+                presupuesto: document.getElementById('presupuesto').value,
+                restricciones: document.getElementById('restricciones').value 
+                    ? document.getElementById('restricciones').value.split(',').map(r => r.trim())
+                    : [],
+                preferencias: document.getElementById('preferencias').value
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/recommend`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error ${response.status}`);
+                }
+
+                const result = await response.json();
+                showResults(result.recomendaciones);
+                showSuccess('✅ Recomendaciones generadas!');
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function uploadRecipe(event) {
+            event.preventDefault();
+            showLoading(true);
+
+            const file = document.getElementById('recipeFile').files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error ${response.status}`);
+                }
+
+                const result = await response.json();
+                showSuccess(`✅ ${result.mensaje}\n(${result.documentos_totales} documentos totales)`);
+                document.getElementById('formUpload').reset();
+            } catch (error) {
+                showError(`Error al subir: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function sendMessage(event) {
+            event.preventDefault();
+            showLoading(true);
+
+            const mensaje = document.getElementById('mensaje').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mensaje })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error ${response.status}`);
+                }
+
+                const result = await response.json();
+                showResults(result.respuesta);
+                document.getElementById('mensaje').value = '';
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Drag and drop
+        const fileInput = document.getElementById('recipeFile');
+        const dropZone = document.querySelector('.file-input-label');
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.background = '#ddd';
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.background = '';
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.background = '';
+            fileInput.files = e.dataTransfer.files;
+        });
+    </script>
+</body>
+</html>
