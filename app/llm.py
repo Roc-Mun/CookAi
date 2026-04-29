@@ -21,9 +21,14 @@ class LLMClient:
                 "Añade tu clave: OPENAI_API_KEY=sk-proj-..."
             )
         
-        self.client = OpenAI(api_key=api_key)
-        self.model = "gpt-4o-mini"  # Modelo rentable recomendado
-        self.temperature = 0.7
+        # Se añade base_url para que apunte a Groq en lugar de a OpenAI
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.groq.com/openai/v1"
+        )
+        # Se cambia el modelo de OpenAI por uno gratuito de Groq
+        self.model = "llama-3.3-70b-versatile"  #Modelo actualizado
+        self.temperature = 0.5
         self.max_tokens = 1500
     
     

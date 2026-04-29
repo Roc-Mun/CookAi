@@ -316,9 +316,9 @@
                 <div class="form-group">
                     <label>📄 Selecciona un archivo de recetas</label>
                     <div class="file-input-wrapper">
-                        <label class="file-input-label">
-                            📁 Haz clic para seleccionar o arrastra un archivo
-                            <input type="file" id="recipeFile" accept=".pdf,.txt,.docx,.doc" required>
+                        <label class="file-input-label" id="dropZone">
+                            <span id="fileNameDisplay">📁 Haz clic para seleccionar o arrastra un archivo</span>
+                            <input type="file" id="recipeFile" accept=".pdf,.txt,.docx,.doc" required onchange="updateFileName()">
                         </label>
                     </div>
                     <small style="color: #999; margin-top: 8px; display: block;">
@@ -327,7 +327,7 @@
                 </div>
 
                 <div class="button-group">
-                    <button type="submit" class="btn-primary">📤 Subir Recetas</button>
+                    <button type="submit" class="btn-primary" id="btnSubirArchivo">📤 Subir Recetas</button>
                 </div>
             </form>
         </div>
@@ -352,14 +352,16 @@
         <div class="success" id="success"></div>
 
         <div class="results" id="results">
-            <h2>✨ Resultado:</h2>
+            <h2>✨ Recetas recomendas:</h2>
             <p id="resultsContent"></p>
         </div>
 
-        <div class="status" id="status">
-            Esperando entrada...
-        </div>
-    </div>
+        <div class="status" id="status" style="background: none; border: none; padding: 0;">
+    <button id="btn-mas" onclick="generarMas()" 
+            style="background-color: #6358B7; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; transition: background 0.3s;">
+        Generar más recetas
+    </button>
+</div>
 
     <script>
         const API_BASE = "http://localhost:8000";
@@ -436,6 +438,27 @@
             }
         }
 
+        function updateFileName() {
+            const fileInput = document.getElementById('recipeFile');
+            const display = document.getElementById('fileNameDisplay');
+            const btnSubir = document.getElementById('btnSubirArchivo');
+            const dropZone = document.getElementById('dropZone');
+
+            if (fileInput.files.length > 0) {
+                const name = fileInput.files[0].name;
+                // Cambiamos el texto por el nombre del archivo
+                display.innerHTML = `<strong>✅ Archivo listo:</strong> ${name}`;
+                
+                // Cambiamos el estilo visual de la caja
+                dropZone.style.background = "#efe"; // Un verde muy clarito de éxito
+                dropZone.style.borderColor = "#3c3";
+                
+                // Cambiamos el texto del botón
+                btnSubir.innerText = "🚀 Todo listo, ¡Subir Receta!";
+            }
+        }
+
+
         async function uploadRecipe(event) {
             event.preventDefault();
             showLoading(true);
@@ -464,17 +487,18 @@
             }
         }
 
-        async function sendMessage(event) {
+        async function uploadRecipe(event) {
             event.preventDefault();
             showLoading(true);
 
-            const mensaje = document.getElementById('mensaje').value;
+            const file = document.getElementById('recipeFile').files[0];
+            const formData = new FormData();
+            formData.append('file', file);
 
             try {
-                const response = await fetch(`${API_BASE}/chat`, {
+                const response = await fetch(`${API_BASE}/upload`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mensaje })
+                    body: formData
                 });
 
                 if (!response.ok) {
@@ -482,12 +506,65 @@
                 }
 
                 const result = await response.json();
-                showResults(result.respuesta);
-                document.getElementById('mensaje').value = '';
+                showSuccess(`✅ ${result.mensaje}\n(${result.documentos_totales} documentos totales)`);
+                
+                // --- NUEVO CÓDIGO DE LIMPIEZA ---
+                document.getElementById('formUpload').reset();
+                document.getElementById('fileNameDisplay').innerText = "📁 Haz clic para seleccionar o arrastra un archivo";
+                document.getElementById('dropZone').style.background = '';
+                document.getElementById('dropZone').style.borderColor = '';
+                document.getElementById('btnSubirArchivo').innerText = "📤 Subir Recetas";
+                // ------------------------------------------
+
+            } catch (error) {
+                showError(`Error al subir: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // --- NUEVA FUNCIÓN PARA GENERAR MÁS RECETAS ---
+        let recetasVistas = [];
+
+        async function generarMas() {
+            const ingredientesInput = document.getElementById('ingredientes').value;
+            if (!ingredientesInput) {
+                showError("Por favor, ingresa ingredientes primero en la pestaña Recomendador");
+                return;
+            }
+
+            const btnMas = document.getElementById('btn-mas');
+            const resultsContent = document.getElementById('resultsContent');
+            
+            btnMas.innerText = "⏳ Buscando otra receta...";
+            btnMas.disabled = true;
+
+            // Recolectamos lo que ya está en pantalla para no repetir
+            const textoActual = resultsContent.textContent;
+
+            try {
+                const response = await fetch(`${API_BASE}/recommend_more`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ingredientes: ingredientesInput.split(',').map(i => i.trim()),
+                        recetas_vistas: [textoActual] // Enviamos el texto actual para que la IA sepa qué NO repetir
+                    })
+                });
+
+                if (!response.ok) throw new Error(`Error ${response.status}`);
+
+                const result = await response.json();
+                
+                // Añadimos la nueva receta al contenido existente con una separación
+                resultsContent.textContent += "\n\n---\n\n" + result.nueva_receta;
+                showSuccess('✅ ¡Nueva receta añadida!');
+                
             } catch (error) {
                 showError(`Error: ${error.message}`);
             } finally {
-                showLoading(false);
+                btnMas.innerText = "Generar más recetas";
+                btnMas.disabled = false;
             }
         }
 
@@ -508,7 +585,10 @@
             e.preventDefault();
             dropZone.style.background = '';
             fileInput.files = e.dataTransfer.files;
+         
+            updateFileName()
         });
+        
     </script>
 </body>
 </html>

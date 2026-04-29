@@ -7,8 +7,9 @@ import os
 import shutil
 from pathlib import Path
 
-from rag import RAGSystem
-from llm import LLMClient
+#Cambio línea de código agregando app.
+from app.rag import RAGSystem
+from app.llm import LLMClient
 
 load_dotenv()
 
@@ -33,7 +34,7 @@ rag_system = RAGSystem()
 llm_client = LLMClient()
 
 # Crear carpeta de uploads si no existe
-UPLOAD_DIR = Path("../data/uploads")
+UPLOAD_DIR = Path("data/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -134,8 +135,18 @@ async def get_recommendations(request: dict):
         - Presupuesto: {presupuesto}
         - Preferencias de cocina: {preferencias}
         
-        Recomienda 3 recetas personalizadas que se adapten a sus necesidades.
-        Explica por qué son adecuadas para este usuario.
+        INSTRUCCIONES DE FORMATO: 
+        - Recomienda 3 recetas personalizadas.
+        - ORTOGRAFÍA PERFECTA: Aunque el usuario escriba sin tildes (ej: 'atun', 'papa', 'limon'), tú DEBES escribir correctamente en español ('atún', 'papa', 'limón') tanto en los títulos como en el texto.
+        - Para cada receta usa este formato exacto:
+        TÍTULOS: Usa el formato "X) NOMBRE DE LA RECETA" en MAYÚSCULAS y con tildes correctas.
+        
+        [Instrucciones de preparación]
+        
+        [Comentario breve de por qué es adecuada]
+        
+        - NO uses asteriscos ni almohadillas.
+        - Deja líneas en blanco entre el título, la preparación y el comentario.
         """
         
         recomendacion = llm_client.generate_response(prompt)
@@ -191,7 +202,44 @@ async def chat(message: dict):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en chat: {str(e)}")
+    
 
+@app.post("/recommend_more")
+async def get_one_more(request: dict):
+    """
+    Generar una receta adicional siguiendo el formato limpio y sin repeticiones
+    """
+    try:
+        vistas = request.get("recetas_vistas", [])
+        ingredientes = request.get("ingredientes", [])
+        
+        # Prompt mejorado con reglas de espacio
+        prompt = f"""
+        Eres CookAI. El usuario ya vio estas recetas: {vistas}.
+        Basado en los ingredientes {', '.join(ingredientes)}, genera UNA SOLA receta nueva.
+        
+        REGLAS DE FORMATO (SÍGUELAS AL PIE DE LA LETRA):
+        1. Comienza directamente con el título: X) NOMBRE DE LA RECETA (en MAYÚSCULAS).
+        2. Salta UNA línea en blanco.
+        3. Escribe solo las instrucciones de preparación, sin textos de introducción como "Aquí tienes...".
+        4. Salta OTRA línea en blanco después de la preparación.
+        5. Termina con un comentario breve sobre por qué elegiste la receta.
+        
+        EJEMPLO DE ESTRUCTURA:
+        4) TITULO DE LA RECETA
+        
+        Corta los ingredientes... (instrucciones)
+        
+        Esta receta es ideal porque... (comentario final)
+        """
+        
+        nueva_receta = llm_client.generate_response(prompt)
+        
+        return {
+            "nueva_receta": nueva_receta
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al generar más: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
