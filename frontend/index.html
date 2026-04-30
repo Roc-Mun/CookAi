@@ -444,10 +444,14 @@
         <div class="error" id="error"></div>
         <div class="success" id="success"></div>
 
-        <div class="results" id="results">
-            <h2>✨ Recetas recomendas:</h2>
-            <p id="resultsContent"></p>
-        </div>
+        <div class="results" id="results" style="position: relative;">
+    <button type="button" onclick="clearResultsOnly()" 
+            style="position: absolute; top: 8px; right: 8px; background: #dd455a; /* Rojo pastel muy suave */ color: white; border: none; border-radius: 50%; width: 22px; /* Más pequeño */ height: 22px; cursor: pointer; font-size: 11px; /* Letra más pequeña */ font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); z-index: 10; opacity: 0.8; /* Ligeramente transparente */ transition: opacity 0.2s, background 0.2s;">
+        ✕
+    </button>
+    <h2>✨ Recetas recomendadas:</h2>
+    <p id="resultsContent"></p>
+</div>
 
         <div class="status" id="status" style="background: none; border: none; padding: 0;">
     <button id="btn-mas" onclick="generarMas()" 
@@ -843,6 +847,20 @@
                 btnMas.disabled = false;
             }
         }
+
+        function clearResultsOnly() {
+            const resultsDiv = document.getElementById('results');
+            const resultsContent = document.getElementById('resultsContent');
+    
+            if (resultsDiv) {
+                resultsDiv.classList.remove('show'); // Oculta el cuadro
+            }
+            if (resultsContent) {
+                resultsContent.textContent = ''; // Borra el texto
+            }
+            console.log("Resultados limpiados");
+        }
+            
 
         // Drag and drop
         const fileInput = document.getElementById('recipeFile');
