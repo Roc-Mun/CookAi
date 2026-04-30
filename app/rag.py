@@ -2,6 +2,7 @@ import chromadb
 from pathlib import Path
 import PyPDF2
 import re
+import uuid
 from typing import Optional
 
 
@@ -60,6 +61,56 @@ class RAGSystem:
         print(f"✅ {len(chunks)} chunks de '{source}' añadidos a ChromaDB")
     
     
+    def add_single_recipe_document(
+        self, content: str, source: str, extra_metadata: Optional[dict] = None
+    ) -> str:
+        """
+        Añade un texto completo como un solo documento (una receta = un chunk, un id).
+        Evita colisiones de ids al reiniciar el servidor (usa UUID).
+        """
+        text = (content or "").strip()
+        if not text:
+            raise ValueError("El contenido de la receta está vacío")
+        doc_id = f"doc_gen_{uuid.uuid4().hex}"
+        meta = {"source": source, "chunk": 0, "type": "receta_generada"}
+        if extra_metadata:
+            for k, v in extra_metadata.items():
+                if v is not None and v != "":
+                    meta[str(k)] = str(v)
+        self.collection.add(
+            documents=[text],
+            metadatas=[meta],
+            ids=[doc_id],
+        )
+        print(f"✅ Receta generada guardada en ChromaDB ({doc_id})")
+        return doc_id
+    
+    
+    def search_chunks(self, query: str, top_k: int = 5) -> list[dict]:
+        """
+        Igual que search pero devuelve lista {source, text} para análisis programático.
+        """
+        if not self.collection:
+            return []
+        try:
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=top_k,
+            )
+            if not results.get("documents") or not results["documents"][0]:
+                return []
+            return [
+                {"source": (meta or {}).get("source", ""), "text": doc}
+                for doc, meta in zip(
+                    results["documents"][0],
+                    results["metadatas"][0],
+                )
+            ]
+        except Exception as e:
+            print(f"❌ Error en búsqueda RAG: {e}")
+            return []
+    
+    
     def search(self, query: str, top_k: int = 5) -> str:
         """
         Buscar recetas relevantes según una consulta.
@@ -74,29 +125,13 @@ class RAGSystem:
         if not self.collection:
             return "No hay recetas cargadas en el sistema."
         
-        try:
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=top_k
-            )
-            
-            if not results["documents"] or not results["documents"][0]:
-                return "No se encontraron recetas relevantes."
-            
-            # Combinar resultados
-            recetas = "\n---\n".join([
-                f"Fuente: {meta['source']}\n{doc}"
-                for doc, meta in zip(
-                    results["documents"][0],
-                    results["metadatas"][0]
-                )
-            ])
-            
-            return recetas
+        chunks = self.search_chunks(query, top_k)
+        if not chunks:
+            return "No se encontraron recetas relevantes."
         
-        except Exception as e:
-            print(f"❌ Error en búsqueda RAG: {e}")
-            return "Error al buscar en la base de datos."
+        return "\n---\n".join(
+            [f"Fuente: {c['source']}\n{c['text']}" for c in chunks]
+        )
     
     
     def _split_text(self, text: str, chunk_size: int = 500) -> list:

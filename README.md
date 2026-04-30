@@ -1,109 +1,83 @@
-# 🍳 CookAI - Sistema de Recomendación de Recetas con IA
+# 🍳 CookAI - Recomendador de Recetas con RAG e IA
 
-Recomendación de recetas personalizadas usando arquitectura **RAG** (Retrieval-Augmented Generation) y **LLM** (OpenAI GPT-4o mini).
+CookAI es un asistente culinario inteligente que utiliza **Llama 3 (70B)** a través de **Groq** y una base de datos vectorial **ChromaDB**. El sistema permite buscar recetas personalizadas basadas en lo que tienes en tu despensa y en los documentos que tú mismo subas.
 
-## 📋 Descripción del Proyecto
+## 📋 Características Principales
 
-**CookAI** es un chatbot inteligente que:
-- ✅ Busca recetas similares en tu base de datos (ChromaDB)
-- ✅ Genera recomendaciones personalizadas basadas en:
-  - Ingredientes disponibles
-  - Tiempo de preparación
-  - Restricciones alimentarias
-  - Presupuesto
-  - Preferencias culinarias
-- ✅ Aprende de recetas previas del usuario
-- ✅ Responde preguntas sobre cocina en tiempo real
-
----
+- 🧠 **IA de Alta Potencia:** Utiliza el modelo `llama3-70b-8192` para respuestas precisas.
+- 📂 **Memoria Propia (RAG):** El sistema "lee" tus PDFs, TXTs y DOCXs para sugerir recetas basadas en tus propios archivos.
+- ⚡ **Velocidad Ultra:** Gracias a la infraestructura de Groq, las respuestas son casi instantáneas.
+- 🎨 **Interfaz Moderna:** Sistema de carga de archivos intuitivo y visualización de recetas profesional.
 
 ## 🛠️ Stack Tecnológico
 
 | Componente | Tecnología |
-|-----------|-----------|
-| Backend | FastAPI + Uvicorn |
-| RAG (Almacenamiento) | ChromaDB |
-| LLM (Generación) | OpenAI GPT-4o mini |
-| Frontend | HTML5 + CSS3 + Vanilla JS |
-| Procesamiento de texto | PyPDF2, python-docx |
-| Gestión de secretos | python-dotenv |
+| :--- | :--- |
+| **LLM** | Groq (Llama 3 70B) |
+| **Backend** | FastAPI |
+| **Vector DB** | ChromaDB |
+| **Embeddings** | HuggingFace (Local) |
+| **Frontend** | HTML5 / JavaScript / CSS3 |
 
 ---
 
-## 📁 Estructura del Proyecto
+## 🚀 Configuración e Instalación
 
-```
-cookai/
-├── app/
-│   ├── main.py           # API FastAPI con todos los endpoints
-│   ├── rag.py            # Sistema RAG con ChromaDB
-│   └── llm.py            # Cliente de OpenAI
-├── data/
-│   ├── recetas_ejemplo.txt    # Recetas de ejemplo para empezar
-│   ├── uploads/          # Carpeta para archivos subidos
-│   └── chroma_db/        # Base de datos vectorial (se crea automáticamente)
-├── frontend/
-│   └── index.html        # Interfaz web del usuario
-├── .env                  # 🔐 Tu API key de OpenAI aquí
-├── requirements.txt      # Dependencias Python
-├── README.md             # Este archivo
-└── venv/                 # Entorno virtual
-```
-
----
-
-## 🚀 Instalación y Configuración
-
-### 1. Preparar el Entorno Virtual (ya hecho ✅)
-
+### 1. Clonar y Preparar Entorno
 ```bash
-cd cookai
-venv\Scripts\activate  # Windows
-# source venv/bin/activate  # macOS/Linux
+git clone [https://github.com/Roc-Mun/CookAi.git](https://github.com/Roc-Mun/CookAi.git)
+cd CookAi
+python -m venv venv
+source venv/bin/activate  # macOS/Linux
+venv\Scripts\activate     # Windows
+pip install -r requirements.txt
 ```
 
-### 2. Configurar la API Key
+### 2. Configurar la API Key 🔑
 
-**Importante:** Sin esto, el sistema no funcionará.
+**¡Importante!** Sin este paso, el motor de Inteligencia Artificial no podrá procesar las recetas ni generar recomendaciones.
 
-```bash
-# Copia .env.example a .env
-cp .env.example .env  # macOS/Linux
-copy .env.example .env  # Windows
+1.  **Crear el archivo de configuración:**
+    En tu terminal, ejecuta el siguiente comando para crear tu archivo local de secretos:
 
-# Luego abre .env y completa con tu clave de OpenAI
-# OPENAI_API_KEY=sk-proj-abc123...xyz
-```
+    ```bash
+    cp .env.example .env    # En macOS o Linux
+    copy .env.example .env  # En Windows
+    ```
 
-**¿Dónde obtener tu API key?**
-1. Ve a https://platform.openai.com/
-2. Inicia sesión
-3. Ve a API Keys
-4. Crea una nueva key
-5. Cópiala en `.env` (⚠️ NUNCA compartas este archivo)
+2.  **Obtener tu clave de Groq:**
+    * Ve a [Groq Cloud Console](https://console.groq.com/keys).
+    * Inicia sesión o regístrate.
+    * Haz clic en **"Create API Key"**.
+    * Asígnale un nombre (ej. `CookAI`) y copia la clave generada (debe empezar por `gsk_`).
 
-### 3. Instalar Dependencias Específicas
+3.  **Vincular la clave:**
+    Abre el archivo `.env` en VS Code y pega tu clave de la siguiente forma:
+    ```env
+    GROQ_API_KEY=gsk_tu_clave_aqui_de_48_caracteres
+    ```
+    
+> ⚠️ Seguridad: Nunca compartas tu archivo .env. Ya está configurado en el .gitignore para tu protección.
 
-Si no las instalaste aún:
+### 3. Instalar Dependencias 📦
+
+Asegúrate de tener el entorno virtual activo y ejecuta:
 
 ```bash
 pip install -r requirements.txt
 ```
 
 ---
+# 🎯 Cómo Usar
 
-## 🎯 Cómo Usar
-
-### Opción 1: Iniciar el Servidor (Recomendado)
+# Opción 1: Iniciar el Servidor
+Desde la carpeta raíz del proyecto:
 
 ```bash
-cd app
-python main.py
+python -m app.main
 ```
 
-El servidor estará en: **http://localhost:8000**
-
-Abre en el navegador: **http://localhost:8000/docs** (documentación interactiva)
+El servidor estará en: http://localhost:8000 | Docs: http://localhost:8000/docs
 
 ### Opción 2: Interfaz Web
 
@@ -117,159 +91,68 @@ Abre en el navegador: **http://localhost:8000/docs** (documentación interactiva
 
 ## 📚 Endpoints de la API
 
-### GET `/`
-Estado general del sistema
+El servidor utiliza **FastAPI** y expone los siguientes servicios para la comunicación entre el frontend y la IA:
 
-**Respuesta:**
-```json
-{
-  "mensaje": "Bienvenido a CookAI",
-  "endpoints": {...}
-}
-```
+### 🟢 GET `/status`
+Verifica la salud del sistema, la inicialización de **ChromaDB** y la conexión con el motor de **Groq**.
+* **Respuesta:** `{ "rag_inicializado": true, "api_key_configurada": true, ... }`
 
----
+### 🔵 POST `/upload`
+Permite subir archivos para alimentar la base de datos de conocimientos (RAG).
+* **Formatos soportados:** PDF, TXT, DOCX.
+* **Body:** `multipart/form-data` con el campo `file`.
 
-### GET `/status`
-Verificar estado del RAG y conexión con OpenAI
+### 🟠 POST `/recommend`
+Genera las primeras 3 recomendaciones basadas en el perfil e ingredientes del usuario.
+* **Body (JSON):**
+    ```json
+    {
+      "ingredientes": ["atún", "pasta"],
+      "tiempo_disponible": "20 min",
+      "presupuesto": "bajo",
+      "preferencias": "saludable"
+    }
+    ```
 
-**Respuesta:**
-```json
-{
-  "rag_inicializado": true,
-  "documentos_cargados": 5,
-  "api_key_configurada": true
-}
-```
+### 🟣 POST `/recommend_more`
+**(Nuevo)** Genera una receta adicional evitando duplicar las que ya se muestran en la interfaz.
+* **Body (JSON):**
+    ```json
+    {
+      "ingredientes": ["atún", "pasta"],
+      "recetas_vistas": ["Texto completo de la receta 1...", "Receta 2..."]
+    }
+    ```
 
----
+### 💬 POST `/chat`
+Consulta directa a **CookAI** para resolver dudas culinarias, sustitución de ingredientes o técnicas.
+* **Body (JSON):**
+    ```json
+    {
+      "mensaje": "¿Cómo se hace una salsa bechamel sin grumos?"
+    }
+    ```
 
-### POST `/upload`
-Subir archivos de recetas (PDF, TXT, DOCX)
-
-**Body (multipart/form-data):**
-```
-file: [tu_archivo.pdf]
-```
-
-**Respuesta:**
-```json
-{
-  "mensaje": "Archivo subido exitosamente",
-  "archivo": "recetas.pdf",
-  "documentos_totales": 12
-}
-```
-
----
-
-### POST `/recommend`
-Obtener recomendaciones personalizadas
-
-**Body:**
-```json
-{
-  "ingredientes": ["tomate", "queso", "huevo"],
-  "tiempo_disponible": "30 minutos",
-  "restricciones": ["sin gluten"],
-  "presupuesto": "bajo",
-  "preferencias": "italiana"
-}
-```
-
-**Respuesta:**
-```json
-{
-  "recomendaciones": "Te recomiendo: ...",
-  "fuentes_consultadas": 3,
-  "filtros_aplicados": {...}
-}
-```
-
----
-
-### POST `/chat`
-Chat directo con CookAI
-
-**Body:**
-```json
-{
-  "mensaje": "¿Qué puedo hacer con tomate y cebolla?"
-}
-```
-
-**Respuesta:**
-```json
-{
-  "respuesta": "Con tomate y cebolla puedes...",
-  "contexto_usado": true
-}
-```
-
----
-
-## 💡 Ejemplos de Uso
-
-### Ejemplo 1: Búsqueda Simple
-
-```bash
-curl -X POST "http://localhost:8000/recommend" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ingredientes": ["pasta", "tomate"],
-    "tiempo_disponible": "20 minutos",
-    "presupuesto": "bajo"
-  }'
-```
-
-### Ejemplo 2: Subir Receta
-
-```bash
-curl -X POST "http://localhost:8000/upload" \
-  -F "file=@recetas.pdf"
-```
-
-### Ejemplo 3: Chat
-
-```bash
-curl -X POST "http://localhost:8000/chat" \
-  -H "Content-Type: application/json" \
-  -d '{"mensaje": "Soy vegetariano, ¿qué recetas me recomiendas?"}'
-```
 
 ---
 
 ## 🔧 Configuración Avanzada
 
-### Cambiar Modelo de LLM
+### Ajustar el Modelo LLM y Creatividad
 
-En `app/llm.py`:
-```python
-self.model = "gpt-4"  # Más potente pero más caro
-# o
-self.model = "gpt-3.5-turbo"  # Más barato
-```
+En app/llm.py puedes modificar el comportamiento de la IA:
 
-### Ajustar Temperatura (Creatividad)
+- self.model: Cambiar entre versiones de "Llama3-70b-8192" para máxima calidad.
 
-```python
-self.temperature = 0.3  # Más determinista
-# o
-self.temperature = 1.0  # Más creativo
-```
-
-### Cambiar Número de Resultados RAG
-
-En `app/main.py`:
-```python
-resultados_rag = rag_system.search(query, top_k=10)  # Buscar 10 en lugar de 5
-```
+- self.temperature = 0.2  # Recetas más precisas.
+o
+- self.temperature = 0.8  # Sugerencias más creativas.
 
 ---
 
 ## 🧹 Limpiar la Base de Datos
 
-Si quieres empezar de cero:
+Si deseas borrar todas las recetas subidas y empezar de cero ejecuta:
 
 ```bash
 python -c "from app.rag import RAGSystem; rag = RAGSystem(); rag.clear_database()"
@@ -279,74 +162,74 @@ python -c "from app.rag import RAGSystem; rag = RAGSystem(); rag.clear_database(
 
 ## 🐛 Troubleshooting
 
-### ❌ Error: "OPENAI_API_KEY no configurada"
-- Verifica que existe el archivo `.env` en la raíz
-- Comprueba que tiene `OPENAI_API_KEY=tu_clave_real`
-- Sin comillas, sin espacios
+### ❌ Error: IA no responde:
 
-### ❌ Error: "Connection refused 0.0.0.0:8000"
-- Verifica que el puerto 8000 no está ocupado
-- Cambia el puerto en `main.py`: `uvicorn.run(..., port=8001)`
+Revisa que tu clave en el .env sea correcta y que el nombre de la variable coincida con lo que pide el código (GROQ_API_KEY u OPENAI_API_KEY).
 
-### ❌ ChromaDB vacío
-- Sube recetas primero usando `/upload`
-- O procesa automáticamente `data/recetas_ejemplo.txt`
+### ❌ Error al subir archhivos:
 
-### ❌ Respuestas genéricas de OpenAI
-- Verifica tu API key es válida
-- Comprueba que tienes saldo en tu cuenta
-- Aumenta el `max_tokens` en `llm.py`
+Verifica que el archivo no esté abierto en otro programa y que sea un formato compatible.
+
+### ❌ Error: "Connection refused":
+
+El servidor no está corriendo. Ejecuta python -m app.main y verifica que no haya otro programa usando el puerto 8000.
 
 ---
 
-## � Git & Compartir el Proyecto
+## 💾 Git y Colaboración
 
-### ✅ Lo que SÍ se sube a GitHub/GitLab
+### ✅ Lo que SÍ se sincroniza con GitHub
+El repositorio contiene únicamente la lógica y estructura necesaria para que el proyecto funcione en cualquier entorno:
 
-```
+```text
 cookai/
 ├── app/
-│   ├── main.py
-│   ├── rag.py
-│   └── llm.py
+│   ├── main.py           # Endpoints de FastAPI
+│   ├── rag.py            # Lógica de búsqueda vectorial
+│   └── llm.py            # Cliente de Groq (Llama 3)
 ├── frontend/
-│   └── index.html
+│   └── index.html        # Interfaz de usuario (HTML/JS/CSS)
 ├── data/
 │   └── recetas_ejemplo.txt
-├── .env.example          ← Plantilla sin valores reales
-├── .gitignore            ← Ya configurado
-├── requirements.txt      ← Dependencias
-├── README.md             ← Este archivo
-└── iniciar.*             ← Scripts de inicio
+├── .env.example          # Plantilla de configuración (Sin datos sensibles)
+├── .gitignore            # Reglas de exclusión de Git
+├── requirements.txt      # Listado de librerías de Python
+└── README.md             # Documentación del proyecto
 ```
 
-### ❌ Lo que NO se sube (configurado en .gitignore)
+### ❌ Lo que NO se sube (Protegido por .gitignore)
 
-- **venv/** → Entorno virtual (pesa mucho, es local)
-- **.env** → API keys (⚠️ SEGURIDAD)
-- **__pycache__/** → Archivos compilados de Python
-- **chroma_db/** → Base de datos generada localmente
-- **data/uploads/** → Archivos subidos por usuarios
+Por seguridad y eficiencia, Git ignora los siguientes archivos:
 
-### 📋 Checklist antes de compartir
+- venv/: Entorno virtual (se debe recrear localmente).
 
-- [ ] `.env` existe con tu API key (NO subir)
-- [ ] `.env.example` existe (SÍ subir)
-- [ ] `.gitignore` tiene las carpetas sensibles
-- [ ] `requirements.txt` actualizado (`pip freeze > requirements.txt`)
-- [ ] Todos los `.py` tienen docstrings
-- [ ] README tiene instrucciones claras
+- .env: Archivo con tu API Key real (⚠️ NUNCA subir).
+
+- __pycache__/: Archivos temporales de ejecución de Python.
+
+- chroma_db/: Tu base de datos vectorial local.
+
+- data/uploads/: Archivos privados que hayas subido para probar.
+
+### 📋 Checklist de seguridad
+
+- [ ] ¿El archivo .env está fuera de GitHub?
+
+- [ ] ¿Añadiste la clave en .env siguiendo el formato de .env.example?
+
+- [ ] ¿Instalaste las dependencias con pip install -r requirements.txt?
 
 ---
 
-## �📈 Próximos Pasos
+## 🚀 Próximos Pasos
 
-- [ ] Integrar autenticación de usuarios
-- [ ] Guardar historial de recomendaciones
-- [ ] Sistema de ratings (usuario califica la receta)
-- [ ] Publicar en la nube (Vercel, Railway, Render)
-- [ ] App móvil (React Native, Flutter)
-- [ ] Integrar más LLMs (Anthropic, Ollama, local)
+- [ ] Autenticación: Login para que cada usuario tenga sus propias recetas.
+
+- [ ] Historial: Guardar las recetas generadas anteriormente.
+
+- [ ] Exportación: Botón para descargar recetas en PDF.
+
+- [x] Mejora de UI: Implementar feedback visual en la carga de archivos (Logrado ✨).
 
 ---
 
@@ -356,14 +239,13 @@ Este proyecto es de código abierto. Úsalo libremente.
 
 ---
 
-## 🤝 Soporte
+## 🤝 Soporte y contacto
 
-Si tienes problemas:
-1. Revisa esta documentación
-2. Verifica que todas las librerías están instaladas
-3. Comprueba que `main.py` está en la carpeta `app/`
-4. Ejecuta: `pip list` para ver las versiones
+Si encuentras algún error o tienes dudas:
+
+- Revisa que el servidor esté corriendo en el puerto 8000.
+- Verifica que tu clave de Groq tenga saldo/cuota disponible.
+- Asegúrate de que main.py se ejecute desde la raíz con python -m app.main.
 
 ---
-
-**¡Disfruta cocinando con IA! 🍳✨**
+Desarrollado para hacer tu cocina más inteligente. ¡Disfruta cocinando con CookAI! 🍳✨
