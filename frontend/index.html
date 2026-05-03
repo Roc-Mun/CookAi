@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CookAI - Recomendación de Recetas con IA</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 1.05em;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-input-label {
+            display: block;
+            padding: 12px;
+            background: #f5f5f5;
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .file-input-label:hover {
+            background: #eee;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.05em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            display: none;
+        }
+
+        .results.show {
+            display: block;
+        }
+
+        .results h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .results p {
+            color: #333;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .loading {
+            text-align: center;
+            color: #667eea;
+            font-weight: 600;
+            display: none;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .success {
+            background: #efe;
+            color: #3c3;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .success.show {
+            display: block;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 12px 20px;
+            font-size: 1em;
+            cursor: pointer;
+            color: #999;
+            font-weight: 600;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            background: rgba(0, 0, 0, 0.45);
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal-box {
+            background: white;
+            border-radius: 12px;
+            max-width: 520px;
+            width: 100%;
+            max-height: 88vh;
+            overflow: auto;
+            padding: 24px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+        }
+
+        .modal-box h3 {
+            color: #667eea;
+            margin-bottom: 12px;
+        }
+
+        .modal-box .modal-tipo {
+            color: #333;
+            margin-bottom: 14px;
+            font-size: 1.05em;
+        }
+
+        .modal-box .modal-tipo strong {
+            color: #764ba2;
+        }
+
+        .modal-label {
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+
+        .modal-box pre.modal-preview {
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #f4f4f8;
+            padding: 14px;
+            border-radius: 8px;
+            max-height: 38vh;
+            overflow: auto;
+            font-size: 0.88em;
+            line-height: 1.45;
+            color: #222;
+            border: 1px solid #e0e0e8;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .modal-actions button {
+            flex: 1;
+            padding: 12px 16px;
+        }
+
+        .btn-modal-cancel {
+            background: #eee;
+            color: #444;
+            border: 1px solid #ccc;
+        }
+
+        .btn-modal-save {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🍳 CookAI</h1>
+            <p>Recomendación de Recetas con Inteligencia Artificial</p>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('upload')">📤 Subir Recetas</button>
+            <button class="tab-btn" onclick="switchTab('recommend')">🔍 Recomendador</button>
+            <button class="tab-btn" onclick="switchTab('chat')">💬 Chat</button>
+        </div>
+
+        <!-- TAB 1: SUBIR RECETAS -->
+        <div id="upload" class="tab-content active">
+            <div style="background: #eef2ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #333;">
+                <strong>💡 ¿Cómo usar?</strong> Sube archivos con tus recetas (PDF, TXT, Word). El sistema crea tu base de datos personal para hacer recomendaciones personalizadas.
+            </div>
+            
+            <form id="formUpload" onsubmit="uploadRecipe(event)">
+                <div class="form-group">
+                    <label>📄 Selecciona un archivo de recetas</label>
+                    <div class="file-input-wrapper">
+                        <label class="file-input-label" id="dropZone">
+                            <span id="fileNameDisplay">📁 Haz clic para seleccionar o arrastra un archivo</span>
+                            <input type="file" id="recipeFile" accept=".pdf,.txt,.docx,.doc" required onchange="updateFileName()">
+                        </label>
+                    </div>
+                    <small style="color: #999; margin-top: 8px; display: block;">Formatos: PDF, TXT, DOCX, DOC</small>
+                </div>
+                <div class="button-group">
+                    <button type="submit" class="btn-primary" id="btnSubirArchivo">📤 Subir Recetas</button>
+                </div>
+            </form>
+
+            <h3 style="margin-top: 30px; color: #667eea;">📋 Tu Base de Datos de Recetas</h3>
+            <div id="recipesList" style="background: #f9f9f9; padding: 15px; border-radius: 8px; min-height: 100px;">
+                <p style="color: #999; text-align: center;">Cargando recetas...</p>
+            </div>
+        </div>
+
+        <!-- TAB 2: RECOMENDADOR -->
+        <div id="recommend" class="tab-content">
+            <div style="background: #eef2ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #333;">
+                <strong>💡 ¿Cómo usar?</strong> Define tus ingredientes y criterios. El sistema busca en tu base de datos y te recomienda recetas personalizadas.
+            </div>
+            
+            <form id="formRecommend" onsubmit="getRecommendations(event)">
+                <div class="form-group">
+                    <label>🥘 Ingredientes Disponibles</label>
+                    <input type="text" id="ingredientes" placeholder="Ej: tomate, queso, huevo" required>
+                </div>
+                <div class="form-group">
+                    <label>⏱️ Tiempo Disponible</label>
+                    <select id="tiempo" required>
+                        <option value="">Selecciona tiempo...</option>
+                        <option value="15 minutos">15 minutos</option>
+                        <option value="30 minutos">30 minutos</option>
+                        <option value="1 hora">1 hora</option>
+                        <option value="sin límite">Sin límite</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>💰 Presupuesto</label>
+                    <select id="presupuesto" required>
+                        <option value="">Selecciona presupuesto...</option>
+                        <option value="bajo">Bajo</option>
+                        <option value="medio">Medio</option>
+                        <option value="alto">Alto</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>🚫 Restricciones Alimentarias (opcional)</label>
+                    <input type="text" id="restricciones" placeholder="Ej: sin gluten, vegetariano">
+                </div>
+                <div class="form-group">
+                    <label>🌍 Preferencias de Cocina (opcional)</label>
+                    <input type="text" id="preferencias" placeholder="Ej: italiana, mexicana, asiática">
+                </div>
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">🔍 Obtener Recomendaciones</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- TAB 3: CHAT -->
+        <div id="chat" class="tab-content">
+            <div style="background: #eef2ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #333;">
+                <strong>💡 ¿Cómo usar?</strong> Haz preguntas sobre tus recetas: sustituciones, ajustes, o solicita recomendaciones en conversación.
+            </div>
+            
+            <form id="formChat" onsubmit="sendMessage(event)">
+                <div class="form-group">
+                    <label>💬 Pregunta a CookAI</label>
+                    <textarea id="mensaje" placeholder="Ej: ¿Puedo reemplazar el tomate? ¿Qué hago con huevo y queso?" required></textarea>
+                </div>
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">Enviar</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Indicadores de estado y resultados -->
+        <div class="loading" id="loading">⏳ Procesando...</div>
+        <div class="error" id="error"></div>
+        <div class="success" id="success"></div>
+
+        <div class="results" id="results">
+            <h2>✨ Recetas recomendas:</h2>
+            <p id="resultsContent"></p>
+        </div>
+
+        <div class="status" id="status" style="background: none; border: none; padding: 0;">
+    <button id="btn-mas" onclick="generarMas()" 
+            style="background-color: #6358B7; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; transition: background 0.3s;">
+        Generar más recetas
+    </button>
+</div>
+
+    </div>
+
+    <div id="modal-generada-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-gen-title">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <h3 id="modal-gen-title">Nueva receta generada</h3>
+            <p class="modal-tipo"><strong>Tipo de receta:</strong> <span id="modal-gen-tipo"></span></p>
+            <p class="modal-label">Vista previa (así quedará guardada)</p>
+            <pre class="modal-preview" id="modal-gen-preview"></pre>
+            <div class="modal-actions">
+                <button type="button" class="btn-modal-cancel" id="modal-gen-cancel">Cancelar</button>
+                <button type="button" class="btn-modal-save" id="modal-gen-save">Guardar en mi base</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "http://localhost:8000";
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+            
+            // Cargar historial cuando entra a upload
+            if (tabName === 'upload') {
+                loadRecipesList();
+            }
+        }
+
+        async function loadRecipesList() {
+            try {
+                const response = await fetch(`${API_BASE}/recipes/detailed`);
+                if (!response.ok) throw new Error('Error cargando recetas');
+                
+                const data = await response.json();
+                const listContainer = document.getElementById('recipesList');
+                
+                if (data.total === 0) {
+                    listContainer.innerHTML = '<p style="color: #999; text-align: center;">Aún no hay recetas. ¡Sube tu primer archivo!</p>';
+                    return;
+                }
+                
+                let html = '<div style="color: #333;">';
+                
+                // Iterar por cada archivo
+                Object.entries(data.archivos).forEach(([archivo, recetas]) => {
+                    const recetasCount = recetas.length;
+                    
+                    html += `
+                    <div style="margin: 15px 0; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+                        <div onclick="toggleRecetas('${archivo.replace(/'/g, "\\'")}')" style="padding: 12px; background: #f9f9f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none;">
+                            <div>
+                                <strong>📁 ${archivo}</strong>
+                                <span style="color: #999; margin-left: 10px; font-size: 0.9em;">${recetasCount} receta${recetasCount !== 1 ? 's' : ''}</span>
+                            </div>
+                            <span id="arrow-${archivo}" style="font-size: 1.2em; transition: transform 0.2s;">▼</span>
+                        </div>
+                        
+                        <div id="recetas-${archivo}" style="display: none; padding: 10px 15px; background: white; border-top: 1px solid #eee;">
+                    `;
+                    
+                    // Listar recetas individuales
+                    recetas.forEach((receta, idx) => {
+                        html += `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; margin: 8px 0; background: #f9f9f9; border-radius: 6px;">
+                            <div style="flex: 1;">
+                                <strong style="color: #667eea;">📖 ${receta.titulo}</strong><br>
+                                <small style="color: #999;">${receta.preview}</small>
+                            </div>
+                            <button type="button" onclick="deleteRecipeItem('${receta.id}', '${archivo.replace(/'/g, "\\'")}')" class="btn-secondary" style="flex: 0; padding: 6px 10px; font-size: 0.85em; background: #fee; color: #c33; border: 1px solid #c33; cursor: pointer; border-radius: 4px;">✕</button>
+                        </div>
+                        `;
+                    });
+                    
+                    html += `</div></div>`;
+                });
+                
+                html += '</div>';
+                listContainer.innerHTML = html;
+            } catch (error) {
+                document.getElementById('recipesList').innerHTML = `<p style="color: #c33;">Error: ${error.message}</p>`;
+            }
+        }
+
+        function toggleRecetas(archivo) {
+            const div = document.getElementById(`recetas-${archivo}`);
+            const arrow = document.getElementById(`arrow-${archivo}`);
+            
+            if (div.style.display === 'none') {
+                div.style.display = 'block';
+                arrow.style.transform = 'rotate(0deg)';
+            } else {
+                div.style.display = 'none';
+                arrow.style.transform = 'rotate(-90deg)';
+            }
+        }
+
+        async function deleteRecipeItem(itemId, archivo) {
+            if (!confirm('¿Eliminar esta receta?')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/recipes/item?item_id=${itemId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) throw new Error('Error eliminando');
+                
+                showSuccess('✅ Receta eliminada');
+                loadRecipesList();
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+            }
+        }
+
+        function showLoading(show = true) {
+            document.getElementById('loading').classList.toggle('show', show);
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = message;
+            errorEl.classList.add('show');
+            setTimeout(() => errorEl.classList.remove('show'), 5000);
+        }
+
+        function showSuccess(message) {
+            const successEl = document.getElementById('success');
+            successEl.textContent = message;
+            successEl.classList.add('show');
+            setTimeout(() => successEl.classList.remove('show'), 3000);
+        }
+
+        function showResults(content) {
+            document.getElementById('resultsContent').textContent = content;
+            document.getElementById('results').classList.add('show');
+        }
+
+        async function getRecommendations(event) {
+            event.preventDefault();
+            showLoading(true);
+
+            const data = {
+                ingredientes: document.getElementById('ingredientes').value.split(',').map(i => i.trim()),
+                tiempo_disponible: document.getElementById('tiempo').value,
+                presupuesto: document.getElementById('presupuesto').value,
+                restricciones: document.getElementById('restricciones').value 
+                    ? document.getElementById('restricciones').value.split(',').map(r => r.trim())
+                    : [],
+                preferencias: document.getElementById('preferencias').value
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/recommend`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error ${response.status}`);
+                }
+
+                const result = await response.json();
+                showResults(result.recomendaciones);
+                showSuccess('✅ Recomendaciones generadas!');
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function updateFileName() {
+            const fileInput = document.getElementById('recipeFile');
+            const display = document.getElementById('fileNameDisplay');
+            const btnSubir = document.getElementById('btnSubirArchivo');
+            const dropZone = document.getElementById('dropZone');
+
+            if (fileInput.files.length > 0) {
+                const name = fileInput.files[0].name;
+                // Cambiamos el texto por el nombre del archivo
+                display.innerHTML = `<strong>✅ Archivo listo:</strong> ${name}`;
+                
+                // Cambiamos el estilo visual de la caja
+                dropZone.style.background = "#efe"; // Un verde muy clarito de éxito
+                dropZone.style.borderColor = "#3c3";
+                
+                // Cambiamos el texto del botón
+                btnSubir.innerText = "🚀 Todo listo, ¡Subir Receta!";
+            }
+        }
+
+
+        async function uploadRecipe(event) {
+            event.preventDefault();
+            showLoading(true);
+
+            const file = document.getElementById('recipeFile').files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error ${response.status}`);
+                }
+
+                const result = await response.json();
+                showSuccess(`✅ ${result.mensaje}\n(${result.documentos_totales} documentos totales)`);
+                document.getElementById('formUpload').reset();
+            } catch (error) {
+                showError(`Error al subir: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function uploadRecipe(event) {
+            event.preventDefault();
+            showLoading(true);
+
+            const file = document.getElementById('recipeFile').files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error ${response.status}`);
+                }
+
+                const result = await response.json();
+                showSuccess(`✅ ${result.mensaje}\n(${result.documentos_totales} documentos totales)`);
+                
+                document.getElementById('formUpload').reset();
+                document.getElementById('fileNameDisplay').innerText = "📁 Haz clic para seleccionar o arrastra un archivo";
+                document.getElementById('dropZone').style.background = '';
+                document.getElementById('dropZone').style.borderColor = '';
+                document.getElementById('btnSubirArchivo').innerText = "📤 Subir Recetas";
+                loadRecipesList();
+
+            } catch (error) {
+                showError(`Error al subir: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function sendMessage(event) {
+            event.preventDefault();
+            showLoading(true);
+
+            const mensaje = document.getElementById('mensaje').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mensaje: mensaje })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error ${response.status}`);
+                }
+
+                const result = await response.json();
+                showResults(result.respuesta);
+                showSuccess('✅ Respuesta generada!');
+                document.getElementById('formChat').reset();
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        /** Texto pendiente de la última generación (hasta Guardar o Cancelar). */
+        let pendingRecetaGenerada = null;
+
+        function abrirModalRecetaGenerada(tipo, texto) {
+            document.getElementById('modal-gen-tipo').textContent = tipo || 'Receta generada';
+            document.getElementById('modal-gen-preview').textContent = texto || '';
+            document.getElementById('modal-generada-overlay').classList.add('show');
+        }
+
+        function cerrarModalRecetaGenerada() {
+            document.getElementById('modal-generada-overlay').classList.remove('show');
+            pendingRecetaGenerada = null;
+            const saveBtn = document.getElementById('modal-gen-save');
+            if (saveBtn) saveBtn.disabled = false;
+        }
+
+        async function guardarRecetaGeneradaConfirmada() {
+            if (!pendingRecetaGenerada) return;
+            const saveBtn = document.getElementById('modal-gen-save');
+            saveBtn.disabled = true;
+            try {
+                const response = await fetch(`${API_BASE}/recipes/save_generated`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contenido: pendingRecetaGenerada.nueva_receta,
+                        tipo_receta: pendingRecetaGenerada.tipo_receta
+                    })
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || `Error ${response.status}`);
+                }
+                const resultsContent = document.getElementById('resultsContent');
+                const block = pendingRecetaGenerada.nueva_receta;
+                if (resultsContent.textContent.trim()) {
+                    resultsContent.textContent += "\n\n---\n\n" + block;
+                } else {
+                    resultsContent.textContent = block;
+                    document.getElementById('results').classList.add('show');
+                }
+                showSuccess('✅ Receta guardada en tu base y añadida abajo.');
+                cerrarModalRecetaGenerada();
+                loadRecipesList();
+            } catch (error) {
+                showError(`Error al guardar: ${error.message}`);
+                saveBtn.disabled = false;
+            }
+        }
+
+        document.getElementById('modal-gen-cancel').addEventListener('click', () => cerrarModalRecetaGenerada());
+        document.getElementById('modal-generada-overlay').addEventListener('click', (e) => {
+            if (e.target.id === 'modal-generada-overlay') cerrarModalRecetaGenerada();
+        });
+        document.getElementById('modal-gen-save').addEventListener('click', guardarRecetaGeneradaConfirmada);
+
+        async function generarMas() {
+            const ingredientesInput = document.getElementById('ingredientes').value;
+            if (!ingredientesInput) {
+                showError("Por favor, ingresa ingredientes primero en la pestaña Recomendador");
+                return;
+            }
+
+            const btnMas = document.getElementById('btn-mas');
+            const resultsContent = document.getElementById('resultsContent');
+            const textoActual = resultsContent.textContent;
+
+            btnMas.innerText = "⏳ Generando receta...";
+            btnMas.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE}/recommend_more`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ingredientes: ingredientesInput.split(',').map(i => i.trim()),
+                        recetas_vistas: [textoActual]
+                    })
+                });
+
+                if (!response.ok) throw new Error(`Error ${response.status}`);
+
+                const result = await response.json();
+                const tipo = result.tipo_receta || 'Receta generada';
+                const cuerpo = (result.nueva_receta || '').trim();
+                if (!cuerpo) {
+                    showError('La IA no devolvió texto de receta. Intenta de nuevo.');
+                    return;
+                }
+                pendingRecetaGenerada = { tipo_receta: tipo, nueva_receta: cuerpo };
+                abrirModalRecetaGenerada(tipo, cuerpo);
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+            } finally {
+                btnMas.innerText = "Generar más recetas";
+                btnMas.disabled = false;
+            }
+        }
+
+        // Drag and drop
+        const fileInput = document.getElementById('recipeFile');
+        const dropZone = document.querySelector('.file-input-label');
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.background = '#ddd';
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.background = '';
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.background = '';
+            fileInput.files = e.dataTransfer.files;
+         
+            updateFileName()
+        });
+        
+    </script>
+</body>
+</html>
