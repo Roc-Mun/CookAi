@@ -1,4 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
+from .agent import agent
+
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -339,6 +341,45 @@ async def chat(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en chat: {str(e)}")
     
+
+#Se agrega EP2: Nuevo app.post= Agente.
+# Definición del modelo Pydantic para asegurar consistencia de tipos
+
+class AgentRecommendRequest(BaseModel):
+    ingredientes: list[str]
+    preferencia: str = ""
+
+@app.post("/recomendar")
+async def recomendar(request: AgentRecommendRequest):
+    try:
+        # 1. Validación estricta mediante Pydantic
+        if not request.ingredientes:
+            raise HTTPException(status_code=400, detail="Faltan los ingredientes obligatorios.")
+            
+        # 2. Construcción del Prompt Estratégico ReAct (IL2.3)
+        prompt_estrategico = f"""
+        El usuario tiene los siguientes ingredientes disponibles: {', '.join(request.ingredientes)}
+        Preferencia o restricción culinaria: {request.preferencia}
+        
+        Por favor, actúa de forma metódica siguiendo estrictamente este PLAN DE ACCIÓN:
+        Etapa 1: Usa la herramienta 'buscar_recetas' para encontrar opciones candidatas en la base de datos RAG.
+        Etapa 2: Invoca 'analizar_ingredientes' para evaluar cuantitativamente qué elementos de la receta ya posee el usuario.
+        Etapa 3: Si se detectan ingredientes faltantes que son críticos, utiliza la herramienta 'obtener_sustitutos' para buscar alternativas.
+        Etapa 4: Formula una respuesta final amigable, detallada y personalizada explicando las recomendaciones y el porqué de las sustituciones.
+        """
+        
+        # 3. Invocación limpia al Agente LangChain pasando el diccionario de contexto obligatorio
+        resultado_agente = agent.invoke({"input": prompt_estrategico})
+        
+        # 4. Retorno exitoso de la respuesta estructurada
+        return {
+            "respuesta": resultado_agente.get("output", "El agente no pudo generar una conclusión válida.")
+        }
+        
+    except Exception as e:
+        print(f"❌ Error interno en el Agente: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error en la ejecución del Agente: {str(e)}")
+
 
 @app.get("/recipes")
 async def get_recipes_list():

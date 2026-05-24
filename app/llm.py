@@ -1,33 +1,26 @@
-from openai import OpenAI
 import os
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
 class LLMClient:
-    """
-    Cliente para interactuar con OpenAI GPT.
-    Genera respuestas basadas en contexto RAG.
-    """
-    
     def __init__(self):
-        """Inicializar cliente de OpenAI"""
-        api_key = os.getenv("OPENAI_API_KEY")
+        # Intentamos cargar primero la clave específica de Groq, si no, la genérica
+        api_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")
         
         if not api_key:
             raise ValueError(
-                "⚠️ OPENAI_API_KEY no configurada en .env\n"
-                "Añade tu clave: OPENAI_API_KEY=sk-proj-..."
+                "⚠️ API KEY no configurada en .env\n"
+                "Añade: GROQ_API_KEY=gsk-..."
             )
         
-        # Se añade base_url para que apunte a Groq en lugar de a OpenAI
+        # Conexión limpia a Groq usando el cliente oficial compatible de OpenAI
         self.client = OpenAI(
             api_key=api_key,
             base_url="https://api.groq.com/openai/v1"
         )
-        # Se cambia el modelo de OpenAI por uno gratuito de Groq
-        self.model = "llama-3.3-70b-versatile"  #Modelo actualizado
+        self.model = "llama-3.3-70b-versatile"
         self.temperature = 0.5
         self.max_tokens = 1500
     
@@ -101,3 +94,19 @@ class LLMClient:
         """
         self.temperature = max(0.0, min(1.0, temperature))
         print(f"✅ Temperatura: {self.temperature}")
+
+
+#Se agrega EP2:
+
+from langchain_openai import ChatOpenAI
+
+langchain_llm = ChatOpenAI(
+
+    model="llama-3.3-70b-versatile",
+
+    base_url="https://api.groq.com/openai/v1",
+
+    api_key=os.getenv("OPENAI_API_KEY"),
+
+    temperature=0.5
+)

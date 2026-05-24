@@ -13,5 +13,6 @@ venv/
 dist/
 build/
 chroma_db/
-data/uploads/
+data/uploads/*
+!data/uploads/.gitkeep
 *.log
