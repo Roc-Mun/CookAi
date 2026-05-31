@@ -116,33 +116,40 @@ Puedes crear tu clave groq en [Groq](https://console.groq.com/keys).
 El sistema incluye scripts para ejecución rápida en distintos entornos.
 
 ⸻
-
 🪟 Windows (CMD)
 
 iniciar.bat
-
 ⸻
 
 🪟 Windows (PowerShell)
 
-.\iniciar.ps1
-
-Si hay restricciones:
-
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+# 1. Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+# 2. .\iniciar.ps1
 
 ⸻
-
 🍎🐧 macOS / Linux
 
-chmod +x iniciar.sh
-./iniciar.sh
+# 1. Crear el entorno virtual de Python
+python3 -m venv venv
 
+# 2. Activar el entorno virtual
+source venv/bin/activate
+
+# 3. Instalar dependencias necesarias
+pip install -r requirements.txt
+
+# 4. Dar permisos de ejecución al script de arranque
+chmod +x iniciar.sh
+
+# 5. Iniciar el servidor
+./iniciar.sh
 ⸻
 
-📍 Servidor disponible en:
+📍 Servidor disponible:
 
-http://localhost:8000
+Una vez que el script se quede ejecutando, el sistema estará listo. No cierres la terminal y abre en tu navegador web:
+
+👉 http://localhost:8000
 
 ⸻
 
@@ -167,7 +174,7 @@ Recibe ingredientes y devuelve recetas optimizadas usando razonamiento interno.
 
 🧪 Prueba rápida del sistema:
 
-Ejemplo de consulta fuera de dominio
+Ejemplo de consulta fuera de dominio:
 
 curl -X POST "http://localhost:8000/chat" \
 -H "Content-Type: application/json" \
@@ -175,7 +182,7 @@ curl -X POST "http://localhost:8000/chat" \
 
 ⸻
 
-Respuesta esperada
+Respuesta esperada:
 
 {
 "output": "Su pregunta no tiene relación con recetas o cocina. Por favor, pregunte sobre recetas, ingredientes o técnicas de cocina."
@@ -197,5 +204,4 @@ El sistema está optimizado para ejecución local, evaluación académica y esca
 
 👥 Integrantes del Proyecto:
 
-CookAI Team — Rocío Muñoz.
-              Francesca Valencia.
+CookAI Team — Rocío Muñoz & Francesca Valencia.
