@@ -1,61 +1,76 @@
-🍳 CookAI - Agente inteligente de automatización culinaria
+# 🍳 CookAI - Agente Inteligente de Automatización Culinaria
 
 CookAI es un ecosistema avanzado basado en Inteligencia Artificial Generativa y agentes cognitivos para la gestión, planificación y optimización culinaria.
 
-Su arquitectura combina memoria híbrida, RAG semántico, y un sistema de agentes con control de dominio estricto, permitiendo continuidad contextual multiusuario y respuestas altamente consistentes.
+Su arquitectura combina memoria híbrida, recuperación semántica mediante RAG y un sistema de agentes con control de dominio estricto, permitiendo continuidad contextual multiusuario y respuestas altamente consistentes.
 
-⸻
+---
 
-🎯 Arquitectura del sistema (Indicadores de Logro)
+# 🎯 Arquitectura del Sistema (Indicadores de Logro)
 
-El sistema está alineado con una arquitectura evaluativa estructurada:
+El sistema está alineado con una arquitectura evaluativa estructurada.
 
-⸻
+---
 
-🧠 IL2.1 — Capacidades del Agente
+## 🧠 IL2.1 — Capacidades del Agente
 
-* Toolkit centralizado en app/tools.py
-* Herramientas deterministas:
-    * 🔎 Consulta (RAG semántico)
-    * 🧩 Razonamiento (intersección de ingredientes sin alucinaciones)
-    * ✍️ Escritura con persistencia en caliente
+Toolkit centralizado en:
 
-⸻
+```text
+app/tools.py
+```
 
-🧠 IL2.2 / IE3 — Sistema de Memoria
+Herramientas deterministas:
 
-* Memoria de corto plazo: historial de sesión
-* Memoria de largo plazo: SQLite (persistent_memory.py)
-* Aprendizaje de restricciones dietéticas entre sesiones
+- 🔎 Consulta mediante RAG semántico
+- 🧩 Razonamiento mediante intersección de ingredientes sin alucinaciones
+- ✍️ Escritura con persistencia en caliente
 
-⸻
+---
 
-🧠 IL2.3 / IE5 — Planificación Secuencial
+## 🧠 IL2.2 / IE3 — Sistema de Memoria
 
-* Patrón Plan-and-Execute
-* Implementado en planning_agent.py
-* Generación de grafos de subtareas
-* Sistema de fallback y contingencias
+Características implementadas:
 
-⸻
+- Memoria de corto plazo mediante historial de sesión
+- Memoria de largo plazo mediante SQLite (`persistent_memory.py`)
+- Aprendizaje persistente de restricciones dietéticas entre sesiones
 
-📚 IE4 — Recuperación Semántica (RAG)
+---
 
-* Motor basado en ChromaDB
-* Búsqueda por similitud coseno
-* Indexación local de documentos culinarios
+## 🧠 IL2.3 / IE5 — Planificación Secuencial
 
-⸻
+Implementaciones:
 
-🛡️ IE6 — Control de Frontera de Dominio
+- Patrón **Plan-and-Execute**
+- Implementado en `planning_agent.py`
+- Generación automática de subtareas
+- Sistema de contingencias y fallback
 
-* Validación en domain_validator.py
-* Filtrado de prompts fuera de dominio
-* Protección contra consultas irrelevantes o maliciosas
+---
 
-⸻
+## 📚 IE4 — Recuperación Semántica (RAG)
 
-📂 Arquitectura de Directorios
+Características:
+
+- Motor basado en **ChromaDB**
+- Búsqueda por similitud coseno
+- Indexación local de documentos culinarios
+
+---
+
+## 🛡️ IE6 — Control de Frontera de Dominio
+
+Implementado mediante:
+
+- Validación en `domain_validator.py`
+- Filtrado de prompts fuera del dominio culinario
+- Protección frente a consultas irrelevantes o maliciosas
+
+---
+
+# 📂 Arquitectura de Directorios
+
 ```text
 CookAI/
 ├── .vscode/
@@ -77,8 +92,8 @@ CookAI/
 │   └── agent_memory.db
 │
 ├── frontend/
-├── venv
-├── .env      
+├── venv/
+├── .env
 ├── .gitignore
 ├── EJEMPLOS_FUNCIONAMIENTO.md
 ├── IMPLEMENTACION_COMPLETA.md
@@ -88,126 +103,187 @@ CookAI/
 ├── README.md
 └── requirements.txt
 ```
-⸻
 
-🛠️ Requisitos Previos e Instalación
+---
 
-1. Clonar el proyecto:
+# 🛠️ Requisitos Previos e Instalación
+
+## Paso 1: Clonar el proyecto
 
 Ubica el proyecto en tu entorno local.
 
-⸻
+---
 
-2. Configurar variables de entorno
+## Paso 2: Configurar variables de entorno
 
--Crea tu archivo .env:
+Crear archivo `.env`:
 
+```bash
 cp .env.example .env
+```
 
--Copia y edita tu clave:
-```text
+Editar las variables:
+
+```env
 GROQ_API_KEY=edita_tu_clave_groq_aqui
 GROQ_MODEL=llama-3.3-70b-versatile
 LLM_TEMPERATURE=0.5
 LLM_MAX_TOKENS=1200
-
-Puedes crear tu clave en [Clave Groq](https://console.groq.com/keys).
 ```
-⸻
 
-🚀 Despliegue Automatizado (IE7)
+Obtén tu clave desde:
 
-Antes de ejecutar los comandos, asegúrate de entrar a la carpeta del proyecto:
+**Groq Console:**  
+https://console.groq.com/keys
 
-cd CookAi
+---
 
-⸻
-🪟 Windows (CMD)
+# 🚀 Despliegue Automatizado (IE7)
+
+Antes de ejecutar cualquier comando:
+
+```bash
+cd CookAI
+```
+
+---
+
+## 🪟 Windows (CMD)
+
+Ejecutar:
+
+```cmd
 iniciar.bat
-⸻
+```
 
-🪟 Windows (PowerShell)
+---
+
+## 🪟 Windows (PowerShell)
+
+Ejecutar:
+
+```powershell
 .\iniciar.ps1
+```
 
-Si hay restricciones:
+Si aparecen restricciones:
+
+```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
 
-⸻
-🍎🐧 macOS / Linux
+---
 
-# 1. Crear el entorno virtual de Python
+## 🍎🐧 macOS / Linux
+
+### 1. Crear entorno virtual
+
+```bash
 python3 -m venv venv
+```
 
-# 2. Activar el entorno virtual
+### 2. Activar entorno virtual
+
+```bash
 source venv/bin/activate
+```
 
-# 3. Instalar dependencias necesarias
+### 3. Instalar dependencias
+
+```bash
 pip install -r requirements.txt
+```
 
-# 4. Dar permisos de ejecución al script de arranque
+### 4. Dar permisos de ejecución
+
+```bash
 chmod +x iniciar.sh
+```
 
-# 5. Iniciar el servidor
+### 5. Iniciar servidor
+
+```bash
 ./iniciar.sh
-⸻
+```
 
-📍 Servidor disponible:
+---
 
-Una vez que el script se quede ejecutando, el sistema estará listo. No cierres la terminal y abre en tu navegador web:
-👉 http://localhost:8000
+# 📍 Servidor Disponible
 
-⸻
+Una vez iniciado el sistema, mantén la terminal abierta.
 
-📡 Endpoints principales (REST API)
+Abrir en navegador:
 
-🔹 POST /chat
+```text
+http://localhost:8000
+```
 
-Pipeline completo:
+---
 
-* Validación de dominio
-* Planificación de consulta
-* RAG + memoria
-* Generación de respuesta
+# 📡 Endpoints Principales (REST API)
 
-⸻
+## 🔹 POST `/chat`
 
-🔹 POST /recomendar
+Pipeline ejecutado:
 
-Recibe ingredientes y devuelve recetas optimizadas usando razonamiento interno.
+- Validación de dominio
+- Planificación de consulta
+- RAG + memoria híbrida
+- Generación de respuesta
 
-⸻
+---
 
-🧪 Prueba rápida del sistema:
+## 🔹 POST `/recomendar`
 
-Ejemplo de consulta fuera de dominio
+Funcionalidad:
 
+- Recibe ingredientes
+- Ejecuta razonamiento interno
+- Devuelve recetas optimizadas
+
+---
+
+# 🧪 Prueba Rápida del Sistema
+
+## Ejemplo fuera de dominio
+
+```bash
 curl -X POST "http://localhost:8000/chat" \
 -H "Content-Type: application/json" \
--d '{"mensaje": "¿Cuál es la capital de Perú?", "user_id": "test_user"}'
+-d '{"mensaje":"¿Cuál es la capital de Perú?","user_id":"test_user"}'
+```
 
-⸻
+### Respuesta esperada:
 
-Respuesta esperada
-
+```json
 {
-"output": "Su pregunta no tiene relación con recetas o cocina. Por favor, pregunte sobre recetas, ingredientes o técnicas de cocina."
+  "output": "Su pregunta no tiene relación con recetas o cocina. Por favor, pregunte sobre recetas, ingredientes o técnicas de cocina."
 }
+```
 
-⸻
+---
 
-🎓 Conclusión:
+# 🎓 Conclusión
 
-CookAI representa una arquitectura de agentes inteligentes modular y escalable, diseñada bajo principios de:
+CookAI representa una arquitectura de agentes inteligentes modular y escalable diseñada bajo principios de:
 
-* Desacoplamiento de dependencias
-* Memoria híbrida persistente
-* Recuperación semántica avanzada
-* Control estricto de dominio
-* Pipeline cognitivo planificado
+- Desacoplamiento de dependencias
+- Memoria híbrida persistente
+- Recuperación semántica avanzada
+- Control estricto de dominio
+- Pipeline cognitivo planificado
 
-El sistema está optimizado para ejecución local, evaluación académica y escalabilidad futura.
+El sistema está optimizado para:
 
-👥 Integrantes del Proyecto:
+- Ejecución local
+- Evaluación académica
+- Escalabilidad futura
 
-CookAI Team — Rocío Muñoz.
-              Francesca Valencia.
+---
+
+# 👥 Integrantes del Proyecto
+
+**CookAI Team**
+
+- Rocío Muñoz
+- Francesca Valencia
