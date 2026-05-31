@@ -100,12 +100,14 @@ Crea tu archivo .env:
 
 cp .env.example .env
 
-Edita:
+Copia y edita:
 
 GROQ_API_KEY=gsk_tu_api_key_real_aqui
 GROQ_MODEL=llama-3.3-70b-versatile
 LLM_TEMPERATURE=0.5
 LLM_MAX_TOKENS=1200
+
+Puedes crear tu clave groq en [Groq](https://console.groq.com/keys).
 
 ⸻
 
