@@ -57,6 +57,7 @@ El sistema está alineado con una arquitectura evaluativa estructurada:
 
 📂 Arquitectura de Directorios
 
+```text
 CookAI-Segunda-Evaluacion/
 └── CookAI/
     ├── .vscode/
