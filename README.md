@@ -86,6 +86,7 @@ CookAI-Segunda-Evaluacion/
     ├── iniciar.sh
     ├── README.md
     └── requirements.txt
+```
 
 ⸻
 
