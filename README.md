@@ -57,32 +57,34 @@ El sistema está alineado con una arquitectura evaluativa estructurada:
 
 📂 Arquitectura de Directorios
 
-CookAI/
-├── app/
-│   ├── agent.py
-│   ├── domain_validator.py
-│   ├── ingredient_match.py
-│   ├── llm.py
-│   ├── main.py
-│   ├── persistent_memory.py
-│   ├── planning_agent.py
-│   ├── rag.py
-│   └── tools.py
-│
-├── data/
-│   ├── chroma_db/
-│   ├── uploads/
-│   └── agent_memory.db
-│
-├── frontend/
-├── .env.example
-├── .gitignore
-├── EJEMPLOS_FUNCIONAMIENTO.md
-├── IMPLEMENTACION_COMPLETA.md
-├── iniciar.bat
-├── iniciar.ps1
-├── iniciar.sh
-└── requirements.txt
+CookAI-Segunda-Evaluacion/
+└── CookAI/
+    ├── .vscode/
+    ├── app/
+    │   ├── agent.py
+    │   ├── domain_validator.py
+    │   ├── ingredient_match.py
+    │   ├── llm.py
+    │   ├── main.py
+    │   ├── persistent_memory.py
+    │   ├── planning_agent.py
+    │   ├── rag.py
+    │   └── tools.py
+    ├── data/
+    │   ├── chroma_db/
+    │   ├── uploads/
+    │   └── agent_memory.db
+    ├── frontend/
+    ├── venv/                     
+    ├── .env
+    ├── .gitignore
+    ├── EJEMPLOS_FUNCTIONAMIENTO.md
+    ├── IMPLEMENTACION_COMPLETA.md
+    ├── iniciar.bat
+    ├── iniciar.ps1
+    ├── iniciar.sh
+    ├── README.md
+    └── requirements.txt
 
 ⸻
 
