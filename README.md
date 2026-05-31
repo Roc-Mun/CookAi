@@ -106,15 +106,14 @@ Ubica el proyecto en tu entorno local.
 
 # 2. Copia y edita:
 
-⸻
 GROQ_API_KEY=gsk_tu_api_key_real_aqui
-⸻
+.
 GROQ_MODEL=llama-3.3-70b-versatile
-⸻
+.
 LLM_TEMPERATURE=0.4
-⸻
+.
 LLM_MAX_TOKENS=1200
-⸻
+.
 Puedes crear tu clave groq en [Groq](https://console.groq.com/keys).
 ⸻
 
