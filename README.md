@@ -127,7 +127,7 @@ Editar las variables:
 ```env
 GROQ_API_KEY=edita_tu_clave_groq_aqui
 GROQ_MODEL=llama-3.3-70b-versatile
-LLM_TEMPERATURE=0.5
+LLM_TEMPERATURE=0.4
 LLM_MAX_TOKENS=1200
 ```
 
