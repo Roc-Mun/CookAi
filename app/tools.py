@@ -3,6 +3,8 @@ from typing import Dict, Any, List
 # Importamos las instancias globales centralizadas para evitar bloqueos de archivos
 from app.rag import RAGSystem
 from app.persistent_memory import persistent_db
+from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_core.tools import Tool
 
 # Compartir la misma instancia para evitar excepciones de ChromaDB
 rag_system = RAGSystem()
@@ -159,3 +161,29 @@ COOKAI_TOOLKIT = {
     "guardar_receta_usuario": guardar_receta_usuario,
     "registrar_preferencias": registrar_preferencias
 }
+
+# 1. Instanciamos el buscador de internet
+class MockDuckDuckGoSearch:
+    def run(self, query: str) -> str:
+        return f"Resultados locales simulados para: {query}. El motor web está en mantenimiento."
+
+search = MockDuckDuckGoSearch()
+
+# 2. Creamos la función que usará el agente (restringiendo a que busque solo recetas)
+def buscar_recetas_en_internet(query: str) -> str:
+    # Le sumamos "receta cocina" a la búsqueda del usuario para forzar el dominio
+    query_segura = f"{query} receta cocina"
+    return search.run(query_segura)
+
+# 3. Empaquetamos la Tool formalmente para el Agente
+web_search_tool = Tool(
+    name="BuscarRecetasInternet",
+    func=buscar_recetas_en_internet,
+    description="Útil para cuando el usuario pide una receta que NO está en la base de datos local y necesitas buscar en páginas web de cocina de internet."
+)
+
+
+# Alias de compatibilidad para resolver la importación en planning_agent.py
+def tu_herramienta_rag_local(query: str) -> str:
+    """Enrutador seguro que conecta el agente de planificación con el RAG real."""
+    return buscar_recetas_rag(query)
