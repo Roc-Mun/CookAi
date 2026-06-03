@@ -1,407 +1,135 @@
 """
-Coincidencia ingredientes usuario ↔ recetas RAG.
-Análisis determinístico (sin LLM).
+Coincidencia ingredientes usuario ↔ texto de receta (RAG), sin LLM.
 """
-
 import re
 import unicodedata
 from typing import Any
 
 
-# =====================================
-# NORMALIZACIÓN
-# =====================================
-
-def _strip_accents(text: str) -> str:
-
+def _strip_accents(s: str) -> str:
     return "".join(
-
-        c for c in unicodedata.normalize(
-            "NFD",
-            text
-        )
-
-        if unicodedata.category(c) != "Mn"
+        c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn"
     )
 
+def normalize(s: str) -> str:
+    return _strip_accents((s or "").lower().strip())
 
-def normalize(text: str) -> str:
-
-    if not text:
-
-        return ""
-
-    return _strip_accents(
-
-        text.lower().strip()
-
-    )
-
-
-# =====================================
-# DETECCIÓN SUSTITUCIÓN
-# =====================================
-
-def es_consulta_sustitucion(
-        mensaje: str
-) -> bool:
-
-    text = normalize(mensaje)
-
-    pattern = (
-
-        r"reemplaz|"
-        r"sustitu|"
-        r"alternativ|"
-        r"en vez de|"
-        r"en lugar de|"
-        r"cambiar.{0,40}por"
-    )
-
+def es_consulta_sustitucion(mensaje: str) -> bool:
+    m = normalize(mensaje or "")
     return bool(
-
         re.search(
-            pattern,
-            text
+            r"reemplaz|sustitu|en vez de|en lugar de|alternativ|cambiar.{0,40}por",
+            m,
         )
     )
 
-
-# =====================================
-# MATCH INGREDIENTES
-# =====================================
-
-def user_ingredient_in_text(
-        ingredient: str,
-        haystack: str
-) -> bool:
-
+def user_ingredient_in_text(ingredient: str, haystack: str) -> bool:
     ing = normalize(ingredient)
-
     text = normalize(haystack)
+    if not ing: return False
+    
+    # Búsqueda más flexible para ingredientes: 
+    # Permitir si la palabra es parte de otra, pero solo si tiene al menos 3 letras
+    if len(ing) < 3:
+        pattern = rf"\b{re.escape(ing)}\b"
+        return bool(re.search(pattern, text))
+    else:
+        return ing in text
 
-    if not ing:
-
-        return False
-
-    pattern = rf"\b{re.escape(ing)}\b"
-
-    return bool(
-
-        re.search(
-            pattern,
-            text
-        )
-    )
-
-
-# =====================================
-# EXTRACCIÓN INGREDIENTES
-# =====================================
-
-def extract_ingredientes_block(
-        recipe_text: str
-) -> str:
-
-    if not recipe_text:
-
-        return ""
-
+def extract_ingredientes_block(text: str) -> str:
     patterns = [
-
-        r"ingredientes?\s*:\s*(.*?)(?=\n\s*(?:preparaci[oó]n|elaboraci[oó]n|instrucciones|pasos|tiempo)|\Z)",
-
-        r"ingredientes?\s*\n(.*?)(?=\n\s*(?:preparaci[oó]n|pasos)|\Z)"
+        r"(?is)ingredientes?\s*:\s*(.*?)(?=\n\s*(?:instrucciones|elaboraci[oó]n|preparaci[oó]n|===|tiempo\s*:|pasos)|\Z)",
+        r"(?is)ingredientes?\s*\n(.*?)(?=\n\s*(?:preparaci[oó]n|pasos|===)|\Z)"
     ]
-
     for pattern in patterns:
-
-        match = re.search(
-
-            pattern,
-
-            recipe_text,
-
-            flags=re.IGNORECASE | re.DOTALL
-        )
-
-        if match:
-
-            return match.group(1).strip()
-
+        m = re.search(pattern, text)
+        if m:
+            return m.group(1).strip()
     return ""
 
-
-def lines_from_ingredient_block(
-        block: str
-) -> list[str]:
-
-    if not block:
-
-        return []
-
-    output = []
-
+def lines_from_ingredient_block(block: str) -> list[str]:
+    lines = []
     for line in block.splitlines():
-
         line = line.strip()
-
         if not line:
-
             continue
-
-        if re.search(
-
-                r"^(tiempo|dificultad|preparaci[oó]n)",
-
-                line,
-
-                re.IGNORECASE
-        ):
-
+        low = line.lower()
+        if low.startswith("tiempo") or low.startswith("dificultad") or low.startswith("preparaci"):
             break
+        lines.append(line)
+    return lines
 
-        output.append(line)
+def analyze_overlap(user_ingredients: list[str], recipe_text: str) -> dict[str, Any]:
+    user_clean = [normalize(i) for i in user_ingredients if i and str(i).strip()]
+    full = recipe_text or ""
+    
+    block = extract_ingredientes_block(full)
+    rec_lines = lines_from_ingredient_block(block) if block else []
+    
+    if not rec_lines:
+        rec_lines = [
+            l.strip() for l in full.split("\n")
+            if l.strip() and "===" not in l and not l.strip().lower().startswith("instrucc")
+        ][:35]
 
-    return output
+    encontrados = [u for u in user_clean if user_ingredient_in_text(u, full)]
+    faltantes = [u for u in user_clean if u not in encontrados]
 
-
-# =====================================
-# ANÁLISIS
-# =====================================
-
-def analyze_overlap(
-
-        user_ingredients: list[str],
-
-        recipe_text: str
-
-) -> dict[str, Any]:
-
-    user_clean = [
-
-        normalize(i)
-
-        for i in user_ingredients
-
-        if i and str(i).strip()
-    ]
-
-    recipe_text = recipe_text or ""
-
-    ingredient_block = extract_ingredientes_block(
-
-        recipe_text
-    )
-
-    recipe_lines = (
-
-        lines_from_ingredient_block(
-
-            ingredient_block
-
-        )
-
-        if ingredient_block
-
-        else []
-    )
-
-    if not recipe_lines:
-
-        recipe_lines = [
-
-            line.strip()
-
-            for line in recipe_text.splitlines()
-
-            if line.strip()
-
-        ][:40]
-
-    encontrados = [
-
-        ing
-
-        for ing in user_clean
-
-        if user_ingredient_in_text(
-
-            ing,
-
-            recipe_text
-        )
-    ]
-
-    faltantes = [
-
-        ing
-
-        for ing in user_clean
-
-        if ing not in encontrados
-    ]
-
-    unmatched_lines = []
-
-    for line in recipe_lines:
-
-        if not any(
-
-                user_ingredient_in_text(
-
-                    ing,
-
-                    line
-
-                )
-
-                for ing in user_clean
-        ):
-
-            unmatched_lines.append(
-
-                line[:100]
-            )
+    lineas_sin_match: list[str] = []
+    for line in rec_lines:
+        if not any(user_ingredient_in_text(u, line) for u in user_clean):
+            lineas_sin_match.append(line[:100])
 
     n_user = len(user_clean)
+    n_found = len(encontrados)
+    n_lines = len(rec_lines)
+    n_lines_match = n_lines - len(lineas_sin_match)
 
-    ratio = (
+    ratio_u = (n_found / n_user) if n_user else 0.0
 
-        len(encontrados) / n_user
-
-        if n_user
-
-        else 0
-    )
-
-    if ratio >= 0.70:
-
+    if n_user == 0:
+        nivel = "bajo" # Seguro para evitar falsos positivos
+    elif ratio_u >= 0.70:
         nivel = "alto"
-
-    elif ratio >= 0.35:
-
+    elif ratio_u >= 0.35:
         nivel = "medio"
-
     else:
-
         nivel = "bajo"
 
     return {
-
         "n_usuario": n_user,
-
-        "n_en_receta": len(encontrados),
-
+        "n_en_receta": n_found,
         "usuario_en_receta": encontrados,
-
         "usuario_no_en_receta": faltantes,
-
-        "n_lineas_ingredientes_receta":
-
-            len(recipe_lines),
-
-        "n_lineas_receta_con_match":
-
-            len(recipe_lines)
-
-            - len(unmatched_lines),
-
-        "n_lineas_sin_match":
-
-            len(unmatched_lines),
-
-        "lineas_receta_sin_match_usuario":
-
-            unmatched_lines[:10],
-
-        "ratio_usuario_en_receta":
-
-            ratio,
-
-        "nivel_coincidencia":
-
-            nivel
+        "n_lineas_ingredientes_receta": n_lines,
+        "n_lineas_receta_con_match": n_lines_match,
+        "n_lineas_sin_match": len(lineas_sin_match),
+        "lineas_receta_sin_match_usuario": lineas_sin_match[:10],
+        "ratio_usuario_en_receta": ratio_u,
+        "nivel_coincidencia": nivel,
     }
 
+def _titulo_corto(text: str) -> str:
+    for line in (text or "").split("\n"):
+        if "===" in line:
+            return line.strip()[:90]
+    t = (text or "").strip().split("\n", 1)[0]
+    return (t[:80] + "…") if len(t) > 80 else t
 
-# =====================================
-# PROMPT SUPPORT
-# =====================================
-
-def _titulo_corto(
-        text: str
-) -> str:
-
-    first = (
-
-        text.strip()
-
-        .splitlines()[0]
-
-        if text
-
-        else "Sin título"
-    )
-
-    return first[:80]
-
-
-def bloque_analisis_para_prompt(
-
-        user_ingredients: list[str],
-
-        chunks: list[dict]
-
-) -> str:
-
+def bloque_analisis_para_prompt(user_ingredients: list[str], chunks: list[dict]) -> str:
     if not chunks:
-
-        return "(Sin fragmentos RAG)"
-
-    bloques = []
-
-    for idx, chunk in enumerate(
-
-            chunks,
-
-            start=1
-    ):
-
-        analysis = analyze_overlap(
-
-            user_ingredients,
-
-            chunk.get(
-                "text",
-                ""
-            )
+        return "(Sin fragmentos RAG.)"
+    partes = []
+    for i, ch in enumerate(chunks, 1):
+        an = analyze_overlap(user_ingredients, ch.get("text", ""))
+        tit = _titulo_corto(ch.get("text", ""))
+        fuente = ch.get("source", "?")
+        faltan = an["lineas_receta_sin_match_usuario"][:4]
+        faltan_txt = "; ".join(faltan) if faltan else "(ninguna línea suelta detectada)"
+        partes.append(
+            f"#{i} [{fuente}] «{tit}»: el usuario tiene {an['n_en_receta']} de {an['n_usuario']} "
+            f"ingredientes requeridos ({', '.join(an['usuario_en_receta']) or 'ninguno'}). "
+            f"Faltan de su lista: {', '.join(an['usuario_no_en_receta']) or '—'}. "
+            f"Nivel de coincidencia: {an['nivel_coincidencia'].upper()}."
         )
-
-        faltantes = ", ".join(
-
-            analysis[
-                "usuario_no_en_receta"
-            ]
-
-        ) or "ninguno"
-
-        bloques.append(
-
-            f"""
-Chunk {idx}
-Fuente: {chunk.get('source','?')}
-Título: {_titulo_corto(chunk.get('text',''))}
-
-Coincidencia:
-{analysis['n_en_receta']}/{analysis['n_usuario']}
-
-Nivel:
-{analysis['nivel_coincidencia']}
-
-Faltantes:
-{faltantes}
-"""
-        )
-
-    return "\n".join(bloques)
+    return "\n".join(partes)

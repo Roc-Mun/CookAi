@@ -143,6 +143,91 @@ class PersistentMemoryDB:
 
         return conversations
 
+    def save_interaction(self, user_id: str, role: str, content: str) -> None:
+        """
+        Guarda una interacción individual en la conversación más reciente.
+        Crea una nueva conversación si no existe.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # Obtener la conversación más reciente
+            cursor.execute("""
+                           SELECT id FROM conversations
+                           WHERE user_id = ?
+                           ORDER BY timestamp DESC
+                           LIMIT 1
+                           """, (user_id,))
+            
+            row = cursor.fetchone()
+            
+            if row:
+                conv_id = row[0]
+            else:
+                # Crear nueva conversación
+                timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S%f")
+                conv_id = hashlib.md5(f"{user_id}_{timestamp_str}".encode()).hexdigest()
+                cursor.execute(
+                    "INSERT INTO conversations (id, user_id) VALUES (?, ?)",
+                    (conv_id, user_id)
+                )
+            
+            # Insertar el mensaje
+            cursor.execute(
+                "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)",
+                (conv_id, role.strip().lower(), content.strip())
+            )
+            conn.commit()
+        except sqlite3.Error as e:
+            print(f"[SQLite Error en save_interaction]: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+
+    def get_recent_interactions(self, user_id: str, limit: int = 5) -> List[Dict[str, str]]:
+        """
+        Recupera los últimos 'limit' mensajes de la conversación actual del usuario.
+        Sirve para la memoria a corto plazo del agente.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        messages = []
+        
+        try:
+            # Obtener la conversación más reciente
+            cursor.execute("""
+                           SELECT id FROM conversations
+                           WHERE user_id = ?
+                           ORDER BY timestamp DESC
+                           LIMIT 1
+                           """, (user_id,))
+            
+            row = cursor.fetchone()
+            
+            if row:
+                conv_id = row[0]
+                # Obtener los últimos mensajes de esta conversación
+                cursor.execute("""
+                               SELECT role, content FROM messages
+                               WHERE conversation_id = ?
+                               ORDER BY timestamp DESC
+                               LIMIT ?
+                               """, (conv_id, limit))
+                
+                # Fetch devuelve en orden descendente, así que invertimos
+                db_messages = cursor.fetchall()
+                db_messages.reverse()
+                
+                messages = [{"role": role, "content": content} for role, content in db_messages]
+                
+        except sqlite3.Error as e:
+            print(f"[SQLite Error en get_recent_interactions]: {e}")
+        finally:
+            conn.close()
+            
+        return messages
+
     def update_user_preferences(self, user_id: str, preferences: Dict[str, Any]) -> None:
         """
         Herramienta de Escritura Adaptativa: Actualiza los gustos y restricciones

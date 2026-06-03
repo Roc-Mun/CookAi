@@ -97,10 +97,10 @@ class RAGSystem:
         print(f"✅ Receta generada guardada exitosamente en el RAG ({doc_id})")
         return doc_id
 
-    def search_chunks(self, query: str, top_k: int = 5) -> list[dict]:
+    def search_chunks(self, query: str, top_k: int = 5, distance_threshold: float = 0.55) -> list[dict]:
         """
         Herramienta de Consulta: Realiza búsquedas por similitud vectorial.
-        Retorna estructuras de diccionarios limpias listas para el análisis de ingredientes.
+        Retorna estructuras de diccionarios limpias y aplica un threshold para evitar "alucinaciones".
         """
         if not self.collection or not query.strip():
             return []
@@ -116,12 +116,19 @@ class RAGSystem:
 
             # Mapear los arreglos paralelos que entrega ChromaDB en objetos legibles
             mapped_results = []
-            for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
-                metadata_safe = meta if meta else {}
-                mapped_results.append({
-                    "source": metadata_safe.get("source", "Desconocida"),
-                    "text": doc
-                })
+            distances = results.get("distances", [[]])[0]
+            
+            for i, (doc, meta) in enumerate(zip(results["documents"][0], results["metadatas"][0])):
+                dist = distances[i] if i < len(distances) else 0.0
+                
+                # IL2.1: Validar distancia semántica (cosine distance: menor es mejor)
+                if dist <= distance_threshold:
+                    metadata_safe = meta if meta else {}
+                    mapped_results.append({
+                        "source": metadata_safe.get("source", "Desconocida"),
+                        "text": doc,
+                        "distance": dist
+                    })
             return mapped_results
 
         except Exception as e:
@@ -141,11 +148,19 @@ class RAGSystem:
             [f"Fuente: {c['source']}\n{c['text']}" for c in chunks]
         )
 
-    def _split_text(self, text: str, chunk_size: int = 600) -> list[str]:
+    def _split_text(self, text: str, chunk_size: int = 1500) -> list[str]:
         """
-        Divide de forma inteligente el texto respetando los saltos de línea dobles
-        para no cortar los ingredientes o pasos a la mitad.
+        Divide de forma inteligente el texto respetando bloques de recetas.
+        Si encuentra delimitadores '===', divide las recetas de manera individual.
         """
+        import re
+        if "===" in text:
+            # Dividir respetando el delimitador '===' o saltos previos
+            parts = re.split(r'\n(?====)', text)
+            chunks = [p.strip() for p in parts if len(p.strip()) > 30]
+            if chunks:
+                return chunks
+                
         paragraphs = text.split("\n\n")
         chunks = []
         current_chunk = ""

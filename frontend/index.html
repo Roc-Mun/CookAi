@@ -334,6 +334,76 @@
             color: white;
             border: none;
         }
+
+        /* ── Panel de actividad del agente ── */
+        .agent-panel {
+            display: none;
+            background: #0f0e17;
+            border-radius: 10px;
+            padding: 16px 18px;
+            margin-top: 18px;
+            border: 1px solid #2d2b55;
+            font-family: 'Courier New', monospace;
+            font-size: 0.82em;
+            color: #a8b5c8;
+        }
+        .agent-panel.show { display: block; }
+        .agent-panel-title {
+            color: #7c83fd;
+            font-weight: 700;
+            font-size: 0.92em;
+            letter-spacing: 0.04em;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .agent-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 5px 0;
+            border-bottom: 1px solid #1e1c35;
+            opacity: 0;
+            transform: translateY(4px);
+            transition: opacity 0.35s, transform 0.35s;
+        }
+        .agent-step.visible { opacity: 1; transform: none; }
+        .agent-step:last-child { border-bottom: none; }
+        .step-icon { font-size: 1em; min-width: 18px; }
+        .step-text { color: #c5cae9; line-height: 1.4; }
+        .step-text .tool-name {
+            color: #80cbc4;
+            font-weight: 600;
+        }
+        .step-text .step-detail {
+            color: #9e9e9e;
+            font-size: 0.9em;
+        }
+        .pulse-dot {
+            width: 8px; height: 8px;
+            background: #7c83fd;
+            border-radius: 50%;
+            display: inline-block;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.7); }
+        }
+        /* ── Badge de rechazo ── */
+        .rejection-box {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin-top: 16px;
+            color: #5d4037;
+            display: none;
+        }
+        .rejection-box.show { display: block; }
+        .rejection-box strong { color: #e65100; }
+
     </style>
 </head>
 <body>
@@ -341,6 +411,9 @@
         <div class="header">
             <h1>🍳 CookAI</h1>
             <p>Recomendación de Recetas con Inteligencia Artificial</p>
+            <div id="memory-banner" style="margin-top: 15px; padding: 10px; background: #eef2ff; border-radius: 8px; font-weight: normal; color: #667eea; font-size: 0.9em; border: 1px solid #d0d7f6;">
+                🤖 <strong>Estado del Agente:</strong> Conectando...
+            </div>
         </div>
 
         <!-- Tabs -->
@@ -441,6 +514,19 @@
 
         <!-- Indicadores de estado y resultados -->
         <div class="loading" id="loading">⏳ Procesando...</div>
+
+        <!-- Panel de actividad del Agente (visible durante procesamiento) -->
+        <div class="agent-panel" id="agentPanel">
+            <div class="agent-panel-title">
+                <span class="pulse-dot" id="agentPulseDot"></span>
+                🤖 CookAI Agent — actividad en tiempo real
+            </div>
+            <div id="agentSteps"></div>
+        </div>
+
+        <!-- Caja de rechazo por falta de coincidencia -->
+        <div class="rejection-box" id="rejectionBox"></div>
+
         <div class="error" id="error"></div>
         <div class="success" id="success"></div>
 
@@ -598,38 +684,109 @@
             document.getElementById('results').classList.add('show');
         }
 
+        /* ── Pasos que anima el panel del agente ── */
+        const AGENT_STEPS_RECOMMEND = [
+            { icon: "🔍", tool: "DomainValidator", detail: "Validando que la consulta sea culinaria..." },
+            { icon: "🗺️", tool: "PlanningAgent",   detail: "Generando plan de acción secuencial..." },
+            { icon: "🧠", tool: "RAG / ChromaDB",  detail: "Buscando recetas relevantes en la base vectorial..." },
+            { icon: "⚖️", tool: "IngredientMatcher", detail: "Calculando coincidencia de ingredientes (thresholding)..." },
+            { icon: "💬", tool: "LLM (Groq)",       detail: "Sintetizando recomendación final..." },
+            { icon: "💾", tool: "PersistentMemory", detail: "Guardando interacción en memoria de corto plazo..." }
+        ];
+
+        const AGENT_STEPS_CHAT = [
+            { icon: "🔍", tool: "DomainValidator",  detail: "Verificando que la consulta sea culinaria..." },
+            { icon: "🗺️", tool: "PlanningAgent",    detail: "Planificando respuesta..." },
+            { icon: "🧠", tool: "RAG / ChromaDB",   detail: "Recuperando contexto semántico relevante..." },
+            { icon: "🔄", tool: "SubstitutionTool", detail: "Detectando consultas de sustitución..." },
+            { icon: "💬", tool: "LLM (Groq)",        detail: "Generando respuesta culinaria..." }
+        ];
+
+        function showAgentPanel(steps) {
+            const panel = document.getElementById("agentPanel");
+            const stepsDiv = document.getElementById("agentSteps");
+            stepsDiv.innerHTML = "";
+            panel.classList.add("show");
+
+            steps.forEach((s, i) => {
+                const el = document.createElement("div");
+                el.className = "agent-step";
+                el.innerHTML = `<span class="step-icon">${s.icon}</span>
+                    <span class="step-text">
+                        <span class="tool-name">${s.tool}</span><br>
+                        <span class="step-detail">${s.detail}</span>
+                    </span>`;
+                stepsDiv.appendChild(el);
+                setTimeout(() => el.classList.add("visible"), i * 420);
+            });
+        }
+
+        function hideAgentPanel() {
+            const panel = document.getElementById("agentPanel");
+            panel.classList.remove("show");
+            document.getElementById("agentSteps").innerHTML = "";
+        }
+
+        function showRejectionBox(msg) {
+            const box = document.getElementById("rejectionBox");
+            box.innerHTML = `<strong>⚠️ Sin coincidencia suficiente en tu base de recetas</strong><br><br>${msg}`;
+            box.classList.add("show");
+        }
+
+        function hideRejectionBox() {
+            document.getElementById("rejectionBox").classList.remove("show");
+        }
+
         async function getRecommendations(event) {
             event.preventDefault();
             showLoading(true);
+            hideRejectionBox();
+            document.getElementById("results").classList.remove("show");
+
+            showAgentPanel(AGENT_STEPS_RECOMMEND);
 
             const data = {
-                ingredientes: document.getElementById('ingredientes').value.split(',').map(i => i.trim()),
-                tiempo_disponible: document.getElementById('tiempo').value,
-                presupuesto: document.getElementById('presupuesto').value,
-                restricciones: document.getElementById('restricciones').value 
-                    ? document.getElementById('restricciones').value.split(',').map(r => r.trim())
+                ingredientes: document.getElementById("ingredientes").value.split(",").map(i => i.trim()),
+                tiempo_disponible: document.getElementById("tiempo").value,
+                presupuesto: document.getElementById("presupuesto").value,
+                restricciones: document.getElementById("restricciones").value
+                    ? document.getElementById("restricciones").value.split(",").map(r => r.trim())
                     : [],
-                preferencias: document.getElementById('preferencias').value
+                preferencias: document.getElementById("preferencias").value
             };
 
             try {
                 const response = await fetch(`${API_BASE}/recommend`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(data)
                 });
 
-                if (!response.ok) {
-                    throw new Error(`Error ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`Error ${response.status}`);
 
                 const result = await response.json();
-                showResults(result.recomendaciones);
-                showSuccess('✅ Recomendaciones generadas!');
+
+                if (result.status === "sin_coincidencia") {
+                    // Mostrar rechazo con opción de generar
+                    showRejectionBox(result.recomendaciones);
+                } else {
+                    let finalHtml = result.recomendaciones;
+                    if (result.herramientas_usadas) {
+                        finalHtml += '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc; font-size: 0.85em; color: #555;">';
+                        finalHtml += '<strong>🛠️ Herramientas de Agente Usadas:</strong><br>';
+                        result.herramientas_usadas.forEach(h => {
+                            finalHtml += `<span style="display:inline-block; background: #e0f2f1; color: #00695c; padding: 4px 8px; border-radius: 4px; margin: 4px 4px 0 0; font-weight: 600;">${h}</span>`;
+                        });
+                        finalHtml += '</div>';
+                    }
+                    showResults(finalHtml);
+                    showSuccess("✅ Recomendaciones generadas!");
+                }
             } catch (error) {
                 showError(`Error: ${error.message}`);
             } finally {
                 showLoading(false);
+                // Ya no ocultamos el panel del agente para evidenciar la orquestación
             }
         }
 
@@ -720,28 +877,41 @@
         async function sendMessage(event) {
             event.preventDefault();
             showLoading(true);
+            hideRejectionBox();
 
-            const mensaje = document.getElementById('mensaje').value;
+            showAgentPanel(AGENT_STEPS_CHAT);
+
+            const mensaje = document.getElementById("mensaje").value;
 
             try {
                 const response = await fetch(`${API_BASE}/chat`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ mensaje: mensaje })
                 });
 
-                if (!response.ok) {
-                    throw new Error(`Error ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`Error ${response.status}`);
 
                 const result = await response.json();
-                showResults(result.respuesta);
-                showSuccess('✅ Respuesta generada!');
-                document.getElementById('formChat').reset();
+                let respuesta = result.respuesta || result.output || result.response || "";
+                
+                if (result.herramientas_usadas) {
+                    respuesta += '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc; font-size: 0.85em; color: #555;">';
+                    respuesta += '<strong>🛠️ Herramientas de Agente Usadas:</strong><br>';
+                    result.herramientas_usadas.forEach(h => {
+                        respuesta += `<span style="display:inline-block; background: #e0f2f1; color: #00695c; padding: 4px 8px; border-radius: 4px; margin: 4px 4px 0 0; font-weight: 600;">${h}</span>`;
+                    });
+                    respuesta += '</div>';
+                }
+
+                showResults(respuesta);
+                showSuccess("✅ Respuesta generada!");
+                document.getElementById("formChat").reset();
             } catch (error) {
                 showError(`Error: ${error.message}`);
             } finally {
                 showLoading(false);
+                // Ya no ocultamos el panel del agente para evidenciar la orquestación
             }
         }
 
@@ -863,6 +1033,23 @@
             fileInput.files = e.dataTransfer.files;
          
             updateFileName()
+        });
+
+        async function loadStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/status`);
+                const data = await response.json();
+                const memBanner = document.getElementById("memory-banner");
+                if (memBanner) {
+                    memBanner.innerHTML = `🤖 <strong>Estado del Agente:</strong> Activo | 🧠 <strong>Memoria Larga:</strong> ${data.documentos_cargados} Recetas Indexadas | ⚡ <strong>Memoria Corta:</strong> Activa`;
+                }
+            } catch (e) {
+                console.error("Error al cargar estado", e);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadStatus();
         });
         
     </script>
