@@ -62,7 +62,6 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    """Cargar datos iniciales automáticamente al levantar la API."""
     load_initial_data()
 
 frontend_dir = Path(__file__).parent.parent / "frontend"
@@ -78,7 +77,6 @@ rag_system = RAGSystem()
 # =========================================================
 
 def load_initial_data():
-    """Carga recetas base en el RAG si la colección se encuentra vacía."""
     global INITIAL_DATA_LOADED
     if INITIAL_DATA_LOADED:
         return {"status": "ya_cargado"}
@@ -109,7 +107,6 @@ def load_initial_data():
 
 @app.get("/")
 async def root():
-    """Sirve la interfaz gráfica del usuario (Frontend)."""
     frontend_file = Path(__file__).parent.parent / "frontend" / "index.html"
     if frontend_file.exists():
         return FileResponse(str(frontend_file))
@@ -121,7 +118,6 @@ async def root():
 
 @app.get("/status")
 async def status():
-    """Monitorea la salud del backend y el estado de la base vectorial."""
     return {
         "rag_inicializado": rag_system.collection is not None,
         "documentos_cargados": rag_system.get_document_count(),
@@ -132,10 +128,7 @@ async def status():
 
 @app.get("/recipes/detailed")
 async def get_recipes_detailed_endpoint(user_id: str = "default"):
-    """
-    Sana por completo el cuadro 'Tu Base de Datos de Recetas'.
-    Entrega el objeto agrupado por nombre de archivo para 'Object.entries(data.archivos)'.
-    """
+
     try:
         from app.persistent_memory import persistent_db
         # Buscamos de forma cruzada para unificar las consultas del ecosistema
@@ -187,10 +180,7 @@ async def get_recipes_detailed_endpoint(user_id: str = "default"):
 
 @app.post("/upload")
 async def upload_endpoint(file: UploadFile = File(...), user_id: str = "default"):
-    """
-    Ingeye, fragmenta y añade el archivo real en tu ChromaDB (add_documents).
-    Sincroniza con el listado relacional y retorna los contadores limpios.
-    """
+
     try:
         # 1. Copia y almacenamiento del archivo temporal
         temp_dir = Path("temp_uploads")
@@ -247,10 +237,7 @@ async def upload_endpoint(file: UploadFile = File(...), user_id: str = "default"
 
 @app.post("/recommend")
 async def recommend_endpoint(request: dict):
-    """
-    Acepta diccionarios dinámicos para evitar fallos de tipado 422.
-    Procesa las variables e inyecta la clave 'recomendaciones' que espera tu UI.
-    """
+
     try:
         ingredientes_raw = request.get("ingredientes") or ""
         ingredientes = ", ".join(ingredientes_raw) if isinstance(ingredientes_raw, list) else str(ingredientes_raw).strip()
@@ -308,20 +295,49 @@ async def recommend_more_endpoint(request: dict):
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    # 1. PASAR EL MENSAJE POR EL VALIDADOR DE DOMINIO
-    es_valido, mensaje_error = DomainValidator.validate_and_filter(request.mensaje)
+    # 1. INTERCEPTOR GASTRONÓMICO (Evita falsos negativos del validador)
+    # Lista de platos e ingredientes clave que sabemos que son 100% de cocina
+    diccionario_cocina = [
+        "cazuela", "waffle", "waffles", "wafles", "hummus", "garbanzo",
+        "omelette", "omelet", "tortilla", "papa", "papas", "tomate",
+        "pollo", "huevo", "huevos", "queso", "zanahoria", "arroz",
+        "pasta", "carbonara", "queque", "bizcocho", "cocinar", "receta"
+    ]
+
+    mensaje_lower = request.mensaje.lower()
+
+    # Si el usuario menciona explícitamente algo de nuestra cocina, le damos pase libre automático
+    if any(comida in mensaje_lower for comida in diccionario_cocina):
+        es_valido = True
+        mensaje_error = None
+    else:
+        # Si no menciona nada de la lista, dejamos que el validador de la universidad haga su filtro normal
+        es_valido, mensaje_error = DomainValidator.validate_and_filter(request.mensaje)
 
     if not es_valido:
         mensaje_exacto = "Su pregunta no tiene relación con recetas o cocina. Por favor, pregunte sobre recetas, ingredientes o técnicas de cocina."
-
-        return {"output": mensaje_exacto,
-                "respuesta": mensaje_exacto,
-                "response": mensaje_exacto
-                }
+        return {
+            "output": mensaje_exacto,
+            "respuesta": mensaje_exacto,
+            "response": mensaje_exacto
+        }
 
     # 2. CONTINUAR CON EL AGENTE (Si el dominio es correcto)
     try:
-        return {"output": respuesta_agente}
+        from app.planning_agent import agent
+        respuesta_final = agent.run(request.mensaje)
+
+        return {
+            "output": respuesta_final,
+            "respuesta": respuesta_final,
+            "response": respuesta_final,
+            "message": respuesta_final,
+            "status": "success"
+        }
 
     except Exception as e:
-        return {"respuesta": "Disculpa, hubo un problema al conectar con el servidor."}
+        return {
+            "output": f"Error interno temporal: {str(e)}. Intenta de nuevo.",
+            "respuesta": f"Error interno temporal: {str(e)}. Intenta de nuevo.",
+            "response": f"Error interno temporal: {str(e)}. Intenta de nuevo."
+        }

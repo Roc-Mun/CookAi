@@ -162,16 +162,56 @@ COOKAI_TOOLKIT = {
     "registrar_preferencias": registrar_preferencias
 }
 
-# 1. Instanciamos el buscador de internet
-class MockDuckDuckGoSearch:
-    def run(self, query: str) -> str:
-        return f"Resultados locales simulados para: {query}. El motor web está en mantenimiento."
+# Búsqueda web real y directa usando la librería nativa para evitar fallas de LangChain
+def buscar_en_duckduckgo_directo(query: str) -> str:
+    try:
+        from duckduckgo_search import DDGS
+        with DDGS() as ddgs:
+            # Buscamos los 3 primeros resultados de la web
+            resultados = [r for r in ddgs.text(query, max_results=3)]
+            if not resultados:
+                return f"No se encontraron resultados en la web para: {query}"
 
-search = MockDuckDuckGoSearch()
+            # Unimos los títulos y descripciones en un solo texto legible para el modelo
+            texto_final = ""
+            for i, r in enumerate(resultados, 1):
+                texto_final += f"Resultado {i}: {r.get('title', '')} - {r.get('body', '')}\n"
+            return texto_final
+    except Exception as e:
+        return f"Error alternativo en la búsqueda web: {str(e)}. Intente usar ingredientes del RAG local."
+
+# Reemplazamos la instancia del buscador original
+class RealWebSearchWrapper:
+    def run(self, query: str) -> str:
+        return buscar_en_duckduckgo_directo(query)
+
+search = RealWebSearchWrapper()
+
+# =========================================================
+# PARCHE DE BÚSQUEDA REAL Y ALIAS DE COMPATIBILIDAD
+# =========================================================
+
+# 1. Buscador Web Real usando duckduckgo_search nativo
+class RealWebSearchWrapper:
+    def run(self, query: str) -> str:
+        try:
+            from duckduckgo_search import DDGS
+            with DDGS() as ddgs:
+                resultados = [r for r in ddgs.text(query, max_results=3)]
+                if not resultados:
+                    return f"No se encontraron resultados en la web para: {query}"
+
+                texto_final = ""
+                for i, r in enumerate(resultados, 1):
+                    texto_final += f"Resultado {i}: {r.get('title', '')} - {r.get('body', '')}\n"
+                return texto_final
+        except Exception as e:
+            return f"Error en búsqueda web: {str(e)}. Use ingredientes locales."
+
+search = RealWebSearchWrapper()
 
 # 2. Creamos la función que usará el agente (restringiendo a que busque solo recetas)
 def buscar_recetas_en_internet(query: str) -> str:
-    # Le sumamos "receta cocina" a la búsqueda del usuario para forzar el dominio
     query_segura = f"{query} receta cocina"
     return search.run(query_segura)
 
@@ -179,11 +219,10 @@ def buscar_recetas_en_internet(query: str) -> str:
 web_search_tool = Tool(
     name="BuscarRecetasInternet",
     func=buscar_recetas_en_internet,
-    description="Útil para cuando el usuario pide una receta que NO está en la base de datos local y necesitas buscar en páginas web de cocina de internet."
+    description="Útil para cuando el usuario pide una receta que NO está en la base de datos local."
 )
 
-
-# Alias de compatibilidad para resolver la importación en planning_agent.py
+# 4. Alias obligatorio para que planning_agent.py no se caiga al importar
 def tu_herramienta_rag_local(query: str) -> str:
     """Enrutador seguro que conecta el agente de planificación con el RAG real."""
     return buscar_recetas_rag(query)

@@ -180,19 +180,89 @@ tools = [
     web_search_tool            # Opción 2: El buscador de internet en vivo
 ]
 
+# Lista de herramientas ahora tiene DOS opciones (Mantener igual)
+tools = [
+    tu_herramienta_rag_local,  # Opción 1: Tu RAG local (chroma_db)
+    web_search_tool            # Opción 2: El buscador de internet en vivo
+]
+# =========================================================
+# ORQUESTADOR DINÁMICO RECIPIENTE DE PLANES (PRO + FILTRO ESTRICTO)
+# =========================================================
+class DynamicAgentExecutor:
+    def __init__(self):
+        # Reutilizamos tu cliente centralizado para mantener consistencia arquitectónica
+        self.llm_client = LLMClient()
+        self.planner = PlanningAgent(llm_client=self.llm_client)
 
-# =========================================================
-# ANULACIÓN DE EMERGENCIA PARA EVITAR NAMEERROR / DEPRECACIÓN
-# =========================================================
-class FinalMockAgentExecutor:
     def run(self, query: str) -> str:
-        from app.tools import buscar_recetas_rag
-        return buscar_recetas_rag(query)
+        # 1. Generamos el plan formal usando la estructura académica que ya programaste
+        plan_json = self.planner.create_plan(objective=query)
+
+        # 2. Inicializamos el contexto de ejecución para trazar el flujo
+        contexto_ejecucion = ExecutionContext(plan=plan_json)
+
+        informacion_recuperada = ""
+        pasos = plan_json.get("pasos", [])
+
+        # 3. Simulamos la ejecución del plan recorriendo las herramientas asignadas
+        for paso in pasos:
+            num = paso.get("numero", 1)
+            herramienta = paso.get("herramienta_recomendada", "")
+
+            try:
+                if "rag" in herramienta.lower():
+                    resultado = tu_herramienta_rag_local(query)
+                    if resultado and "no se encontr" not in str(resultado).lower():
+                        informacion_recuperada += f"\n[Datos RAG]: {str(resultado)}"
+                    contexto_ejecucion.record_step_result(num, "Búsqueda RAG completada.")
+                else:
+                    resultado = web_search_tool(query)
+                    informacion_recuperada += f"\n[Datos Web]: {str(resultado)}"
+                    contexto_ejecucion.record_step_result(num, "Búsqueda Web en vivo completada.")
+            except Exception as e:
+                contexto_ejecucion.record_failure(num, str(e))
+
+        if not informacion_recuperada.strip():
+            informacion_recuperada = "No se logró consolidar datos externos del motor de búsqueda."
+
+        # 4. PASAMOS EL CONTEXTO AL LLM CON LAS REGLAS DE CONTROL DE INGREDIENTES
+        prompt_formateador = f"""
+Eres CookAI, un asistente de cocina profesional de élite. Tu tarea es procesar la solicitud del usuario utilizando la información real recuperada por nuestras herramientas del sistema.
+
+REGLAS CRÍTICAS DE CONTROL DE INGREDIENTES Y FILTRADO (¡MÁXIMA PRIORIDAD!):
+1) Analiza cuidadosamente la consulta del usuario. Si el usuario menciona tener ingredientes específicos (ejemplo: 'tengo lentejas y fideos', 'tengo pollo', 'qué cocino con papas y queso', etc.), las recetas que propongas deben incluir OBLIGATORIAMENTE esos ingredientes principales en la sección de ingredientes y en la preparación paso a paso.
+2) Si la información recuperada de Internet o RAG contiene platos que NO usan los ingredientes que el usuario dijo tener (como una Pascualina de acelga cuando el usuario pidió fideos/lentejas), ignora por completo esa receta intrusa. En su lugar, usa tus conocimientos de chef para inventar y estructurar 1 o 2 recetas lógicas y deliciosas que SÍ utilicen de forma real y protagónica los insumos del usuario (por ejemplo: 'Guiso de fideos con lentejas' o 'Sopa nutritiva de lentejas y pasta').
+
+REGLAS DE FORMATO EXIGIDO:
+- Diseña de 1 a 2 recetas detalladas que cumplan con la restricción anterior.
+- Cada receta debe iniciar con un título limpio usando emojis atractivos.
+- Crea una sección llamada '**Ingredientes a usar o reemplazar:**'.
+- Crea una sección llamada '**Preparación Paso a Paso:**' numerada estrictamente como 1), 2), 3)... etc. Los pasos deben tener sentido culinario real para el plato.
+- Finaliza cada receta con la línea exacta: '⏱️ **Tiempo de cocción:**' o '⏱️ **Tiempo de preparación:**' con un estimado real.
+
+Consulta del usuario: {query}
+Información recuperada por el sistema (¡FíLocalízala y descarta lo que no sirva!):
+{informacion_recuperada}
+
+Genera tu respuesta gastronómica estructurada y 100% coherente con los ingredientes solicitados:
+"""
+        try:
+            # Mandamos el prompt final a tu cliente LLM unificado
+            respuesta_gourmet = self.llm_client.generate_response(prompt_formateador)
+            return respuesta_gourmet
+        except Exception as e:
+            return f"⚠️ Error al formatear la respuesta del agente: {str(e)}"
 
     def invoke(self, inputs: dict) -> dict:
-        from app.tools import buscar_recetas_rag
         q = inputs.get("input", "") if isinstance(inputs, dict) else str(inputs)
-        return {"output": buscar_recetas_rag(q)}
+        resultado_texto = self.run(q)
+        return {
+            "output": resultado_texto,
+            "respuesta": resultado_texto,
+            "response": resultado_texto,
+            "message": resultado_texto,
+            "status": "success"
+        }
 
-# Forzamos a que el agente use nuestro ejecutor seguro e inmune a errores de librerías
-agent = FinalMockAgentExecutor()
+# Instanciamos el agente unificado con el mismo nombre exacto que requiere app/main.py
+agent = DynamicAgentExecutor()

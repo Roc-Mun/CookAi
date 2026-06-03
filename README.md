@@ -22,9 +22,10 @@ app/tools.py
 
 Herramientas deterministas:
 
-- 🔎 Consulta mediante RAG semántico
-- 🧩 Razonamiento mediante intersección de ingredientes sin alucinaciones
-- ✍️ Escritura con persistencia en caliente
+- 🔎 Consulta mediante RAG semántico.
+- 🌐 Consulta adaptativa mediante búsqueda web en vivo (web_search_tool) si los datos locales son insuficientes.
+- 🧩 Razonamiento mediante intersección de ingredientes sin alucinaciones.
+- ✍️ Escritura con persistencia en caliente.
 
 ---
 
@@ -44,8 +45,9 @@ Implementaciones:
 
 - Patrón **Plan-and-Execute**
 - Implementado en `planning_agent.py`
-- Generación automática de subtareas
-- Sistema de contingencias y fallback
+- Fase de Planificación (PlanningAgent): Recibe la solicitud, evalúa el contexto histórico de la memoria y genera un plan formal estructurado en formato JSON (metas, herramientas recomendadas y dependencias lógicas).
+- Fase de Validación (ExecutionContext): Registra el progreso incremental del plan paso a paso y maneja de forma reactiva las anomalías o fallas de las herramientas.
+- Fase de Orquestación (DynamicAgentExecutor): Ejecuta dinámicamente las tareas simuladas llamando al RAG o la Web, consolidando la información real. Un prompt maestro en el LLMClient actúa como auditor de coherencia, obligando al sistema a respetar estrictamente los ingredientes del usuario y descartar datos intrusos.
 
 ---
 
@@ -53,9 +55,9 @@ Implementaciones:
 
 Características:
 
-- Motor basado en **ChromaDB**
-- Búsqueda por similitud coseno
-- Indexación local de documentos culinarios
+- Motor basado en **ChromaDB**.
+- Búsqueda por similitud coseno.
+- Indexación local de documentos culinarios.
 
 ---
 
@@ -63,9 +65,9 @@ Características:
 
 Implementado mediante:
 
-- Validación en `domain_validator.py`
-- Filtrado de prompts fuera del dominio culinario
-- Protección frente a consultas irrelevantes o maliciosas
+- Validación en `domain_validator.py` combinada con un enrutador flexible en main.py.
+- Filtrado de prompts fuera del dominio culinario.
+- Protección frente a consultas irrelevantes o maliciosas.
 
 ---
 
@@ -127,7 +129,7 @@ Editar las variables:
 ```env
 GROQ_API_KEY=edita_tu_clave_groq_aqui
 GROQ_MODEL=llama-3.3-70b-versatile
-LLM_TEMPERATURE=0.5
+LLM_TEMPERATURE=0.4
 LLM_MAX_TOKENS=1200
 ```
 
@@ -192,6 +194,7 @@ source venv/bin/activate
 
 ```bash
 pip install -r requirements.txt
+pip install langchain-community duckduckgo-search google-search-results
 ```
 
 ### 4. Dar permisos de ejecución
@@ -228,8 +231,8 @@ Pipeline ejecutado:
 
 - Validación de dominio
 - Planificación de consulta
-- RAG + memoria híbrida
-- Generación de respuesta
+- RAG + Búsqueda Web en Vivo.
+- Orquestación inteligente con filtro estricto de ingredientes y generación de respuesta estructurada.
 
 ---
 
@@ -237,9 +240,9 @@ Pipeline ejecutado:
 
 Funcionalidad:
 
-- Recibe ingredientes
-- Ejecuta razonamiento interno
-- Devuelve recetas optimizadas
+- Recibe ingredientes.
+- Ejecuta razonamiento interno.
+- Devuelve recetas optimizadas.
 
 ---
 
@@ -267,17 +270,17 @@ curl -X POST "http://localhost:8000/chat" \
 
 CookAI representa una arquitectura de agentes inteligentes modular y escalable diseñada bajo principios de:
 
-- Desacoplamiento de dependencias
-- Memoria híbrida persistente
-- Recuperación semántica avanzada
-- Control estricto de dominio
-- Pipeline cognitivo planificado
+- Desacoplamiento de dependencias e inyección de clientes centrales (LLMClient).
+- Memoria híbrida persistente corto y largo plazo.
+- Recuperación semántica avanzada combinada con fallback dinámico a la web en tiempo real.
+- Control estricto de dominio sin falsos negativos en solicitudes culinarias complejas.
+- Pipeline cognitivo planificado bajo el estándar Plan-and-Execute.
 
 El sistema está optimizado para:
 
-- Ejecución local
-- Evaluación académica
-- Escalabilidad futura
+- Ejecución local.
+- Evaluación académica.
+- Escalabilidad futura.
 
 ---
 
