@@ -170,17 +170,13 @@ call venv\Scripts\activate.bat
 
 Si aparece:
 
-```text
 ModuleNotFoundError: No module named 'langchain_community'
-```
 
 Ejecutar:
 
 ```cmd
 python -m pip install langchain-community duckduckgo-search google-search-results
 ```
-
-Se utiliza `python -m pip` debido a que algunos entornos Windows pueden bloquear `pip.exe` mediante políticas de seguridad (ej.: Device Guard).
 
 ### 4. Iniciar servidor FastAPI
 
@@ -190,10 +186,8 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Salida esperada:
 
-```text
 INFO: Uvicorn running on http://0.0.0.0:8000
 INFO: Application startup complete.
-```
 
 ### 5. Abrir aplicación
 
