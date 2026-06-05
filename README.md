@@ -150,12 +150,57 @@ cd CookAI
 
 ---
 
-## 🪟 Windows (CMD)
+## 🪟 Windows (Ejecución Manual por CMD)
+
+Si deseas iniciar el proyecto manualmente o el script automático presenta problemas:
+
+### 1. Entrar al directorio del proyecto
+
+```cmd
+cd c:\Users\rocio\Downloads\cookai
+```
+
+### 2. Activar el entorno virtual
+
+```cmd
+call venv\Scripts\activate.bat
+```
+
+### 3. Instalar dependencias faltantes (si aparecen errores)
+
+Si aparece:
+
+```text
+ModuleNotFoundError: No module named 'langchain_community'
+```
 
 Ejecutar:
 
 ```cmd
-iniciar.bat
+python -m pip install langchain-community duckduckgo-search google-search-results
+```
+
+Se utiliza `python -m pip` debido a que algunos entornos Windows pueden bloquear `pip.exe` mediante políticas de seguridad (ej.: Device Guard).
+
+### 4. Iniciar servidor FastAPI
+
+```cmd
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Salida esperada:
+
+```text
+INFO: Uvicorn running on http://0.0.0.0:8000
+INFO: Application startup complete.
+```
+
+### 5. Abrir aplicación
+
+Abrir en navegador:
+
+```text
+http://localhost:8000
 ```
 
 ---
