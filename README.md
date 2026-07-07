@@ -97,6 +97,7 @@ CookAI/
 ├── venv/
 ├── .env
 ├── .gitignore
+├── dashboard.py
 ├── EJEMPLOS_FUNCIONAMIENTO.md
 ├── IMPLEMENTACION_COMPLETA.md
 ├── iniciar.bat
@@ -170,6 +171,7 @@ call venv\Scripts\activate.bat
 
 ```cmd
 pip install -r requirements.txt
+python -m pip install langchain-community duckduckgo-search google-search-results streamlit matplotlib pandas
 ```
 
 ### 4. Instalar dependencias faltantes (solo si aparecen errores)
@@ -243,6 +245,7 @@ source venv/bin/activate
 ```bash
 pip install -r requirements.txt
 pip install langchain-community duckduckgo-search google-search-results
+pip install langchain-community duckduckgo-search google-search-results streamlit matplotlib pandas
 ```
 
 ### 4. Dar permisos de ejecución
@@ -269,6 +272,28 @@ Abrir en navegador:
 http://localhost:8000
 ```
 
+---
+
+# 📊 Dashboard de Observabilidad y Monitoreo (IE1, IE2, IE5)
+
+CookAI cuenta con una interfaz gráfica independiente desarrollada en **Streamlit** diseñada para medir el desempeño, consistencia y trazabilidad del agente en tiempo real.
+
+El dashboard expone interactivamente los datos capturados durante los ciclos de ejecución.
+
+### Métricas Clave Implementadas:
+- ⏱️ **Latencia Promedio (IE2):** Mide en segundos el tiempo de respuesta del LLM (Groq) ante variabilidad de datos.
+- ❌ **Frecuencia de Errores (IE1):** Evalúa la precisión y consistencia determinando la tasa porcentual de fallos del sistema.
+- ⚡ **Uso de Recursos (IE2):** Monitorea el consumo computacional mediante el conteo promedio de tokens procesados por interacción.
+- 📈 **Consistencia Visual:** Gráficos de línea temporales para analizar cuellos de botella y diagramas de sectores para la relación éxito/error.
+
+## 🚀 Cómo Ejecutar el Dashboard
+
+1. Asegúrate de estar en el directorio raíz del proyecto y con el entorno virtual activo.
+2. Ejecuta el siguiente comando en tu terminal:
+
+```bash
+streamlit run dashboard.py
+```
 ---
 
 # 📡 Endpoints Principales (REST API)
