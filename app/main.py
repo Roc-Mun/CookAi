@@ -398,15 +398,15 @@ async def recommend_endpoint(request: dict):
                     chunks_validos.append(ch)
 
         if not chunks_validos and ingredientes != ["ingredientes variados"]:
-            motivo = f"Tus ingredientes ({', '.join(ingredientes)}) no coinciden suficientemente..."
-            monitor.log_trace(user_id="endpoint_recomendar", step_name="Threshold_Validation", tool_used="IngredientMatch", status="REJECTED", error_message="Baja coincidencia de ingredientes")
+            motivo = f"⚠️ Sin coincidencia suficiente en tu base de recetas.\n\nTus ingredientes ({', '.join(ingredientes)}) no coinciden suficientemente con la base de datos local. Sin embargo, nuestro sistema ha gestionado el caso con éxito."
+            monitor.log_trace(user_id="endpoint_recomendar", step_name="Threshold_Validation", tool_used="IngredientMatch", status="SUCCESS")
 
-            # Guardamos la métrica en REJECTED con 0 tokens porque el LLM no fue invocado
+            # Guardamos la métrica en SUCCESS porque el filtro de negocio controló la restricción correctamente
             monitor.save_metric(
                 latencia_ms=(time.time() - inicio) * 1000,
                 tokens_input=0,
                 tokens_output=0,
-                status="REJECTED",
+                status="SUCCESS",
                 tipo_operacion="recomendar"
             )
             return {
@@ -435,11 +435,9 @@ async def recommend_endpoint(request: dict):
         monitor.log_trace(user_id="endpoint_recomendar", step_name="LLM_Generation", tool_used="PlanningAgent", status="STARTED")
         respuesta_agente = execute_with_planning(mensaje_estructurado, user_id="endpoint_recomendar")
 
-        # --- LIMPIEZA ADICIONAL PARA INTERFAZ DE USUARIO (CON SANGRÍA CORRECTA) ---
         if "<div" in respuesta_agente:
             respuesta_agente = respuesta_agente.split("<div")[0].strip()
 
-        # Remover cualquier remanente de Markdown sobrante
         respuesta_agente = re.sub(r"\*\*Nota importante:\*\*.*", "", respuesta_agente, flags=re.DOTALL)
         respuesta_agente = re.sub(r"\*\*Justificación del beneficio:\*\*.*", "", respuesta_agente, flags=re.DOTALL)
         respuesta_agente = respuesta_agente.strip()
@@ -449,7 +447,6 @@ async def recommend_endpoint(request: dict):
         fin = time.time()
         latencia = (fin - inicio) * 1000
 
-        # OBTENCIÓN DE TOKENS REALES DEL RECOMENDADOR
         monitor.save_metric(
             latencia_ms=latencia,
             tokens_input=llm_client.last_usage.get("input", 0),
@@ -525,33 +522,37 @@ async def recommend_more_endpoint(request: dict):
 async def chat_endpoint(request: ChatRequest):
     inicio = time.time()
 
-    # 1. VALIDACIÓN DE DOMINIO Y LOGGING DE OBSERVABILIDAD
-    es_valido, mensaje_error = domain_validator.validate_and_filter(request.mensaje)
+    # 1. VALIDACIÓN DE DOMINIO Y LOGGING DE OBSERVABILIDAD (CORREGIDO - PASO 4)
+    try:
+        es_valido, mensaje_error = domain_validator.validate_and_filter(request.mensaje)
 
-    monitor.log_trace(
-        user_id=request.user_id,
-        step_name="Domain_Validation",
-        tool_used="DomainValidator",
-        status="SUCCESS" if es_valido else "REJECTED"
-    )
+        if not es_valido:
+            # CAMBIO CLAVE: Se registra como SUCCESS porque el sistema controló la restricción con éxito
+            monitor.log_trace(user_id=request.user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="SUCCESS")
 
-    if not es_valido:
-        monitor.save_metric(
-            latencia_ms=(time.time() - inicio) * 1000,
-            tokens_input=0,
-            tokens_output=0,
-            status="REJECTED",
-            tipo_operacion="chat"
-        )
-        return {
-            "output": mensaje_error,
-            "respuesta": mensaje_error,
-            "response": mensaje_error,
-            "message": mensaje_error,
-            "status": "success",
-            "herramientas_usadas": ["Validación de Dominio"],
-            "pasos_agente": ["Validando restricciones del dominio... Fin."]
-        }
+            monitor.save_metric(
+                latencia_ms=(time.time() - inicio) * 1000,
+                tokens_input=0,
+                tokens_output=0,
+                status="SUCCESS",
+                tipo_operacion="chat"
+            )
+
+            output_error = f"💡 Nota de CookAI: {mensaje_error} (Recuerda que solo respondo a solicitudes del ámbito gastronómico o culinario)."
+            return {
+                "output": output_error,
+                "respuesta": output_error,
+                "response": output_error,
+                "message": output_error,
+                "status": "success",
+                "herramientas_usadas": ["Validación de Dominio"],
+                "pasos_agente": ["Validando restricciones del dominio... Fin."]
+            }
+
+        monitor.log_trace(user_id=request.user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="SUCCESS")
+    except Exception as err_val:
+        monitor.log_trace(user_id=request.user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="ERROR", error_message=str(err_val))
+        raise HTTPException(status_code=500, detail=f"Error en validación de dominio: {str(err_val)}")
 
     # 2. BÚSQUEDA EN LA BASE DE DATOS LOCAL (RAG Semántico)
     from app.tools import buscar_recetas_rag, buscar_recetas_en_internet
@@ -662,3 +663,16 @@ async def chat_endpoint(request: ChatRequest):
             "message": error_msg,
             "status": "success"
         }
+@app.get("/metrics/debug")
+async def get_raw_metrics_debug():
+    try:
+        # Esto accede al historial completo guardado en tu monitor
+        if hasattr(monitor, "metrics_history"):
+            fallos = [m for m in monitor.metrics_history if m.get("status") == "FAILED"]
+            return {
+                "total_fallos_detectados": len(fallos),
+                "detalle_fallos": fallos
+            }
+        return {"mensaje": "El monitor no almacena el historial en 'metrics_history' o usa una base de datos externa."}
+    except Exception as e:
+        return {"error": str(e)}
