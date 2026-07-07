@@ -211,6 +211,7 @@ async def get_recipes_detailed_endpoint():
 async def get_metrics_endpoint():
     try:
         metrics = monitor.get_aggregated_metrics()
+
         return metrics
     except Exception as e:
         raise HTTPException(
@@ -359,7 +360,7 @@ async def save_generated_recipe(request: SaveGeneratedRecipeRequest):
 # =========================================================
 # PESTAÑA 2 — RECOMENDADOR CON THRESHOLDING ESTRICTO
 # =========================================================
-UMBRAL_COINCIDENCIA_MINIMO = 0.40
+UMBRAL_COINCIDENCIA_MINIMO = 0.05
 
 @app.post("/recommend")
 async def recommend_endpoint(request: dict):
@@ -447,10 +448,21 @@ async def recommend_endpoint(request: dict):
         fin = time.time()
         latencia = (fin - inicio) * 1000
 
+        # --- SOLUCIÓN AL DESFASE: Sincronización de tokens en tiempo real ---
+        tokens_in = 0
+        tokens_out = 0
+
+        if hasattr(agent, "last_execution_usage") and agent.last_execution_usage:
+            tokens_in = agent.last_execution_usage.get("input", 0)
+            tokens_out = agent.last_execution_usage.get("output", 0)
+        elif hasattr(llm_client, "last_usage") and llm_client.last_usage:
+            tokens_in = llm_client.last_usage.get("input", 0)
+            tokens_out = llm_client.last_usage.get("output", 0)
+
         monitor.save_metric(
             latencia_ms=latencia,
-            tokens_input=llm_client.last_usage.get("input", 0),
-            tokens_output=llm_client.last_usage.get("output", 0),
+            tokens_input=tokens_in,
+            tokens_output=tokens_out,
             status="SUCCESS",
             tipo_operacion="recomendar"
         )
