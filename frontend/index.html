@@ -428,7 +428,7 @@
             <div style="background: #eef2ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #333;">
                 <strong>💡 ¿Cómo usar?</strong> Sube archivos con tus recetas (PDF, TXT, Word). El sistema crea tu base de datos personal para hacer recomendaciones personalizadas.
             </div>
-            
+
             <form id="formUpload" onsubmit="uploadRecipe(event)">
                 <div class="form-group">
                     <label>📄 Selecciona un archivo de recetas</label>
@@ -456,7 +456,7 @@
             <div style="background: #eef2ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #333;">
                 <strong>💡 ¿Cómo usar?</strong> Define tus ingredientes y criterios. El sistema busca en tu base de datos y te recomienda recetas personalizadas.
             </div>
-            
+
             <form id="formRecommend" onsubmit="getRecommendations(event)">
                 <div class="form-group">
                     <label>🥘 Ingredientes Disponibles</label>
@@ -500,7 +500,7 @@
             <div style="background: #eef2ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #333;">
                 <strong>💡 ¿Cómo usar?</strong> Haz preguntas sobre tus recetas: sustituciones, ajustes, o solicita recomendaciones en conversación.
             </div>
-            
+
             <form id="formChat" onsubmit="sendMessage(event)">
                 <div class="form-group">
                     <label>💬 Pregunta a CookAI</label>
@@ -536,7 +536,7 @@
         </div>
 
         <div class="status" id="status" style="background: none; border: none; padding: 0;">
-    <button id="btn-mas" onclick="generarMas()" 
+    <button id="btn-mas" onclick="generarMas()"
             style="background-color: #6358B7; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; transition: background 0.3s;">
         Generar más recetas
     </button>
@@ -569,7 +569,7 @@
             });
             document.getElementById(tabName).classList.add('active');
             event.target.classList.add('active');
-            
+
             // Cargar historial cuando entra a upload
             if (tabName === 'upload') {
                 loadRecipesList();
@@ -580,10 +580,10 @@
             try {
                 const response = await fetch(`${API_BASE}/recipes/detailed`);
                 if (!response.ok) throw new Error('Error cargando recetas');
-                
+
                 const data = await response.json();
                 const listContainer = document.getElementById('recipesList');
-                
+
                 if (data.total === 0) {
                     listContainer.innerHTML = '<p style="color: #999; text-align: center;">Aún no hay recetas. ¡Sube tu primer archivo!</p>';
                     return;
@@ -607,7 +607,7 @@
 
                         <div id="recetas-${archivo}" style="display: none; padding: 10px 15px; background: white; border-top: 1px solid #eee;">
                     `;
-                    
+
                     // Listar recetas individuales
                     recetas.forEach((receta, idx) => {
                         html += `
@@ -620,10 +620,10 @@
                         </div>
                         `;
                     });
-                    
+
                     html += `</div></div>`;
                 });
-                
+
                 html += '</div>';
                 listContainer.innerHTML = html;
             } catch (error) {
@@ -634,7 +634,7 @@
         function toggleRecetas(archivo) {
             const div = document.getElementById(`recetas-${archivo}`);
             const arrow = document.getElementById(`arrow-${archivo}`);
-            
+
             if (div.style.display === 'none') {
                 div.style.display = 'block';
                 arrow.style.transform = 'rotate(0deg)';
@@ -646,14 +646,14 @@
 
         async function deleteRecipeItem(itemId, archivo) {
             if (!confirm('¿Eliminar esta receta?')) return;
-            
+
             try {
                 const response = await fetch(`${API_BASE}/recipes/item?item_id=${itemId}`, {
                     method: 'DELETE'
                 });
-                
+
                 if (!response.ok) throw new Error('Error eliminando');
-                
+
                 showSuccess('✅ Receta eliminada');
                 loadRecipesList();
             } catch (error) {
@@ -800,11 +800,11 @@
                 const name = fileInput.files[0].name;
                 // Cambiamos el texto por el nombre del archivo
                 display.innerHTML = `<strong>✅ Archivo listo:</strong> ${name}`;
-                
+
                 // Cambiamos el estilo visual de la caja
                 dropZone.style.background = "#efe"; // Un verde muy clarito de éxito
                 dropZone.style.borderColor = "#3c3";
-                
+
                 // Cambiamos el texto del botón
                 btnSubir.innerText = "🚀 Todo listo, ¡Subir Receta!";
             }
@@ -859,7 +859,7 @@
 
                 const result = await response.json();
                 showSuccess(`✅ ${result.mensaje}\n(${result.documentos_totales} documentos totales)`);
-                
+
                 document.getElementById('formUpload').reset();
                 document.getElementById('fileNameDisplay').innerText = "📁 Haz clic para seleccionar o arrastra un archivo";
                 document.getElementById('dropZone').style.background = '';
@@ -894,7 +894,7 @@
 
                 const result = await response.json();
                 let respuesta = result.respuesta || result.output || result.response || "";
-                
+
                 if (result.herramientas_usadas) {
                     respuesta += '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc; font-size: 0.85em; color: #555;">';
                     respuesta += '<strong>🛠️ Herramientas de Agente Usadas:</strong><br>';
@@ -1031,7 +1031,7 @@
             e.preventDefault();
             dropZone.style.background = '';
             fileInput.files = e.dataTransfer.files;
-         
+
             updateFileName()
         });
 
@@ -1051,7 +1051,7 @@
         window.addEventListener('DOMContentLoaded', () => {
             loadStatus();
         });
-        
+
     </script>
 </body>
 </html>

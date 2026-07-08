@@ -33,19 +33,19 @@ class CookAIMonitor:
                                                                         tokens_input INTEGER,
                                                                         tokens_output INTEGER,
                                                                         status TEXT,
-                                                                        tipo_operacion TEXT
+                                                                        tipo_operacion TEXT,
+                                                                        consistency_score REAL DEFAULT 1.0
                        )
                        """)
         conn.commit()
         conn.close()
 
-    def save_metric(self, latencia_ms, tokens_input=0, tokens_output=0, status="SUCCESS", tipo_operacion="chat"):
-        """Guarda las métricas operacionales en SQLite para Observabilidad (IL3.1)"""
+    def save_metric(self, latencia_ms, tokens_input=0, tokens_output=0, status="SUCCESS", tipo_operacion="chat", consistency_score=1.0):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
-                       INSERT INTO execution_metrics (id_ejecucion, timestamp, latencia_ms, tokens_input, tokens_output, status, tipo_operacion)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)
+                       INSERT INTO execution_metrics (id_ejecucion, timestamp, latencia_ms, tokens_input, tokens_output, status, tipo_operacion, consistency_score)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                        """, (
                            str(uuid.uuid4()),
                            datetime.now().isoformat(),
@@ -53,7 +53,8 @@ class CookAIMonitor:
                            tokens_input,
                            tokens_output,
                            status,
-                           tipo_operacion
+                           tipo_operacion,
+                           consistency_score
                        ))
         conn.commit()
         conn.close()
@@ -98,6 +99,19 @@ class CookAIMonitor:
             conn.close()
 
         return metrics
+
+    def get_raw_records(self, limit=50):
+        """Extrae los registros crudos de telemetría para alimentar el Dashboard real"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+                       SELECT timestamp, latencia_ms, status, tokens_input, tokens_output
+                       FROM execution_metrics
+                       ORDER BY timestamp DESC LIMIT ?
+                       """, (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
 
 # Instancia global única para ser importada en el pipeline
 cookai_monitor = CookAIMonitor()
