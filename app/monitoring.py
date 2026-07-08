@@ -105,7 +105,8 @@ class CookAIMonitor:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
-                       SELECT timestamp, latencia_ms, status, tokens_input, tokens_output
+                       SELECT timestamp, latencia_ms, status, tokens_input, tokens_output,
+                              tipo_operacion, consistency_score
                        FROM execution_metrics
                        ORDER BY timestamp DESC LIMIT ?
                        """, (limit,))

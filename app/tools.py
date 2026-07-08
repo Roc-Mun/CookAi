@@ -98,10 +98,12 @@ def analizar_coincidencia_ingredientes(ingredientes_usuario: List[str], texto_re
 # 3. HERRAMIENTAS DE ESCRITURA / PERSISTENCIA
 # =========================================================
 
-def guardar_receta_usuario(user_id: str, titulo: str, contenido: str) -> str:
+def guardar_receta_usuario(user_id: str, titulo: str, contenido: str, tipo_receta: str | None = None) -> str:
     """
-    Herramienta de Escritura: Almacena de forma persistente una receta generada
-    o recomendada en el historial de largo plazo (SQLite) y la indexa en el RAG.
+    Herramienta de Escritura ÚNICA para persistir una receta generada, usada tanto
+    por el Chat (al pedir "genérame una receta nueva") como por el Recomendador
+    (botón "Guardar en mi base"), para que ambos flujos queden siempre en el mismo
+    lugar: historial de largo plazo (SQLite) e indexada en el RAG (ChromaDB).
     """
     if not user_id or not titulo or not contenido:
         return "Error: Faltan campos obligatorios para persistir la receta."
@@ -117,6 +119,8 @@ def guardar_receta_usuario(user_id: str, titulo: str, contenido: str) -> str:
 
         # 2. Retroalimentación de la base de conocimientos RAG (IL2.1)
         meta_adicional = {"receta_titulo": titulo}
+        if tipo_receta:
+            meta_adicional["tipo_receta"] = tipo_receta
         rag_system.add_single_recipe_document(
             content=contenido,
             source=f"Usuario_{user_id}_Recetario",
@@ -162,33 +166,8 @@ COOKAI_TOOLKIT = {
     "registrar_preferencias": registrar_preferencias
 }
 
-# Búsqueda web real y directa usando la librería nativa para evitar fallas de LangChain
-def buscar_en_duckduckgo_directo(query: str) -> str:
-    try:
-        from duckduckgo_search import DDGS
-        with DDGS() as ddgs:
-            # Buscamos los 3 primeros resultados de la web
-            resultados = [r for r in ddgs.text(query, max_results=3)]
-            if not resultados:
-                return f"No se encontraron resultados en la web para: {query}"
-
-            # Unimos los títulos y descripciones en un solo texto legible para el modelo
-            texto_final = ""
-            for i, r in enumerate(resultados, 1):
-                texto_final += f"Resultado {i}: {r.get('title', '')} - {r.get('body', '')}\n"
-            return texto_final
-    except Exception as e:
-        return f"Error alternativo en la búsqueda web: {str(e)}. Intente usar ingredientes del RAG local."
-
-# Reemplazamos la instancia del buscador original
-class RealWebSearchWrapper:
-    def run(self, query: str) -> str:
-        return buscar_en_duckduckgo_directo(query)
-
-search = RealWebSearchWrapper()
-
 # =========================================================
-# PARCHE DE BÚSQUEDA REAL Y ALIAS DE COMPATIBILIDAD
+# BÚSQUEDA WEB REAL (DuckDuckGo) Y ALIAS DE COMPATIBILIDAD
 # =========================================================
 
 # 1. Buscador Web Real usando duckduckgo_search nativo

@@ -1,7 +1,15 @@
 import os
+import sys
 import shutil
 import re
 import time
+
+# Los logs del sistema usan emojis (⚠️, ✅, 🔍...). En Windows, si stdout/stderr
+# no está en UTF-8 (ej. salida redirigida a archivo), un simple print() truena
+# con UnicodeEncodeError y tumba silenciosamente el request que lo dispara.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 from pathlib import Path
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -14,9 +22,11 @@ from dotenv import load_dotenv
 # Importaciones de los módulos del proyecto
 from app.rag import RAGSystem
 from app.domain_validator import DomainValidator
-from app.agent import execute_with_planning, agent  # Importamos el agente y su ecosistema
-from app.ingredient_match import bloque_analisis_para_prompt, es_consulta_sustitucion, analyze_overlap
+from app.agent import execute_with_planning, agent, _extract_ingredients_from_text  # Importamos el agente y su ecosistema
+from app.ingredient_match import bloque_analisis_para_prompt, es_consulta_sustitucion, analyze_overlap, es_solicitud_generar_receta
 from app.monitoring import CookAIMonitor
+from app.tools import buscar_recetas_rag, buscar_recetas_en_internet, guardar_receta_usuario
+from app.llm import is_llm_fallback
 
 # Inicialización segura del monitor del ecosistema CookAI
 monitor = CookAIMonitor()
@@ -43,6 +53,7 @@ class ChatRequest(BaseModel):
 class SaveGeneratedRecipeRequest(BaseModel):
     contenido: str
     tipo_receta: str | None = None
+    user_id: str = "default"
 
 class MoreRecipesRequest(BaseModel):
     recetas_vistas: list[str] = []
@@ -50,7 +61,6 @@ class MoreRecipesRequest(BaseModel):
 
 
 # Constantes y Rutas de Archivos
-GENERATED_RECIPES_SOURCE = "recetas_generadas_CookAI.txt"
 UPLOAD_DIR = Path("data/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -60,26 +70,49 @@ INITIAL_DATA_LOADED = False
 # HELPERS INTERNOS
 # =========================================================
 
-def _titulo_desde_contenido_receta(content: str, metadata: dict) -> str:
-    """Título para listado: formato === RECETA ===, N) TÍTULO, o metadata."""
+# Encabezados que indican que un chunk es la continuación de la receta anterior
+# (ej: el chunking cortó "Ingredientes" e "Instrucciones" en fragmentos separados)
+# y NO una receta nueva independiente.
+_MARCADORES_CONTINUACION = ("instrucc", "preparaci", "elaboraci", "pasos")
+
+def _titulo_desde_contenido_receta(content: str, metadata: dict) -> tuple[str, bool]:
+    """
+    Título para listado a partir de: formato === RECETA ===, 'N) TÍTULO', metadata,
+    o (si nada de eso aplica) la primera línea real del contenido.
+    Retorna (titulo, es_continuacion) — es_continuacion=True indica que el chunk
+    es un fragmento de la receta previa y no debe listarse como receta aparte.
+    """
     tipo_meta = (metadata or {}).get("tipo_receta") or ""
-    titulo = "Sin título"
+    primera_linea = ""
     for line in content.split("\n"):
         line_st = line.strip()
         if not line_st:
             continue
+        if not primera_linea:
+            primera_linea = line_st
+
         if "===" in line_st and "RECETA" in line_st.upper():
             titulo = line_st.replace("=", "").strip()
-            break
+            if tipo_meta:
+                return f"[{tipo_meta}] {titulo}", False
+            return titulo, False
+
         m = re.match(r"^\d+\)\s*(.+)$", line_st)
         if m:
             titulo = m.group(1).strip()
-            break
-    if tipo_meta and titulo != "Sin título":
-        return f"[{tipo_meta}] {titulo}"
+            if tipo_meta:
+                return f"[{tipo_meta}] {titulo}", False
+            return titulo, False
+
     if tipo_meta:
-        return f"[{tipo_meta}] Receta generada"
-    return titulo
+        return f"[{tipo_meta}] Receta generada", False
+
+    if primera_linea.lower().startswith(_MARCADORES_CONTINUACION):
+        return primera_linea[:80], True
+
+    # Sin encabezado reconocible: usamos la primera línea real en vez de
+    # inventar o etiquetar genéricamente el contenido ("no asumir recetas").
+    return (primera_linea[:80] or "Fragmento sin título"), False
 
 def _parse_tipo_y_cuerpo_receta_generada(raw: str) -> tuple[str, str]:
     """Separa la línea TIPO: del resto."""
@@ -187,22 +220,54 @@ async def get_recipes_detailed_endpoint():
         if not all_docs or not all_docs.get("ids") or len(all_docs["ids"]) == 0:
             return {"archivos": {}, "total": 0}
 
-        archivos = {}
+        # Agrupar chunks por fuente y ordenarlos por índice de chunk para poder
+        # detectar cuáles son continuación (sin encabezado propio) de la receta anterior.
+        por_fuente: dict[str, list[tuple]] = {}
         for doc_id, content, metadata in zip(
                 all_docs["ids"], all_docs["documents"], all_docs["metadatas"]
         ):
-            source = (metadata or {}).get("source", "Sin nombre")
-            if source not in archivos:
-                archivos[source] = []
+            meta = metadata or {}
+            source = meta.get("source", "Sin nombre")
+            por_fuente.setdefault(source, []).append((meta.get("chunk", 0), doc_id, content, meta))
 
-            titulo = _titulo_desde_contenido_receta(content, metadata or {})
-            archivos[source].append({
-                "id": doc_id,
-                "titulo": titulo,
-                "preview": content[:100].replace("\n", " ") + "..."
-            })
+        archivos = {}
+        for source, items in por_fuente.items():
+            items.sort(key=lambda it: it[0])
+            recetas: list[dict] = []
+            grupo_actual = None
 
-        return {"archivos": archivos, "total": len(all_docs["ids"])}
+            for _chunk_idx, doc_id, content, meta in items:
+                titulo, es_continuacion = _titulo_desde_contenido_receta(content, meta)
+
+                if es_continuacion and grupo_actual is not None:
+                    # Fragmento de continuación (ej: sección "Instrucciones" separada por el
+                    # chunking): pertenece a la receta anterior, no es una receta nueva.
+                    grupo_actual["ids"].append(doc_id)
+                    grupo_actual["_full"] += "\n" + content
+                else:
+                    if grupo_actual is not None:
+                        recetas.append(grupo_actual)
+                    grupo_actual = {
+                        "ids": [doc_id],
+                        "titulo": titulo,
+                        "_full": content,
+                    }
+
+            if grupo_actual is not None:
+                recetas.append(grupo_actual)
+
+            archivos[source] = [
+                {
+                    "id": r["ids"][0],
+                    "ids": r["ids"],
+                    "titulo": r["titulo"],
+                    "preview": r["_full"][:100].replace("\n", " ") + "..."
+                }
+                for r in recetas
+            ]
+
+        total_recetas = sum(len(v) for v in archivos.values())
+        return {"archivos": archivos, "total": total_recetas}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
@@ -217,6 +282,32 @@ async def get_metrics_endpoint():
         raise HTTPException(
             status_code=500,
             detail=f"Error al obtener métricas del sistema: {str(e)}"
+        )
+
+
+@app.get("/metrics/history")
+async def get_metrics_history_endpoint(limit: int = 50):
+    """Serie temporal real de ejecuciones (IL3.1/IL3.2), para graficar en el dashboard
+    en vez de datos simulados: latencia, consistencia, tokens y estado por request."""
+    try:
+        rows = monitor.get_raw_records(limit=limit)
+        registros = [
+            {
+                "timestamp": r[0],
+                "latencia_ms": r[1],
+                "status": r[2],
+                "tokens_input": r[3],
+                "tokens_output": r[4],
+                "tipo_operacion": r[5],
+                "consistency_score": r[6],
+            }
+            for r in reversed(rows)  # orden cronológico ascendente para graficar
+        ]
+        return {"registros": registros, "total": len(registros)}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al obtener historial de métricas: {str(e)}"
         )
 
 
@@ -338,15 +429,19 @@ async def save_generated_recipe(request: SaveGeneratedRecipeRequest):
             raise HTTPException(status_code=400, detail="No hay contenido para guardar")
 
         tipo = (request.tipo_receta or "").strip() or None
-        extra = {"tipo_receta": tipo} if tipo else {}
+        titulo = tipo or re.sub(r"[*#_>-]", "", contenido.split("\n")[0]).strip()[:80] or "Receta generada"
 
-        doc_id = rag_system.add_single_recipe_document(
-            contenido, GENERATED_RECIPES_SOURCE, extra_metadata=extra or None
+        # Misma función de escritura que usa el Chat (IL2.1/IL2.2): queda en
+        # SQLite (memoria de largo plazo) y en el RAG (ChromaDB) en un solo paso,
+        # sin importar desde qué pestaña se generó la receta.
+        resultado = guardar_receta_usuario(
+            user_id=request.user_id, titulo=titulo, contenido=contenido, tipo_receta=tipo
         )
+        if resultado.startswith("❌") or resultado.startswith("Error"):
+            raise HTTPException(status_code=500, detail=resultado)
+
         return {
             "mensaje": "Receta guardada en tu base de datos",
-            "item_id": doc_id,
-            "source": GENERATED_RECIPES_SOURCE,
             "documentos_totales": rag_system.get_document_count(),
         }
     except HTTPException:
@@ -360,7 +455,8 @@ async def save_generated_recipe(request: SaveGeneratedRecipeRequest):
 # =========================================================
 # PESTAÑA 2 — RECOMENDADOR CON THRESHOLDING ESTRICTO
 # =========================================================
-UMBRAL_COINCIDENCIA_MINIMO = 0.05
+# El filtro de aceptación real vive en analyze_overlap() (nivel_coincidencia),
+# que exige coincidencia del ingrediente principal de la receta.
 
 @app.post("/recommend")
 async def recommend_endpoint(request: dict):
@@ -385,17 +481,15 @@ async def recommend_endpoint(request: dict):
         monitor.log_trace(user_id="endpoint_recomendar", step_name="RAG_Retrieval", tool_used="ChromaDB", status="SUCCESS")
 
         monitor.log_trace(user_id="endpoint_recomendar", step_name="Threshold_Validation", tool_used="IngredientMatch", status="STARTED")
-        mejor_ratio = 0.0
         chunks_validos = []
 
         if chunks and ingredientes != ["ingredientes variados"]:
             for ch in chunks:
                 analisis = analyze_overlap(ingredientes, ch.get("text", ""))
-                ratio = analisis.get("ratio_usuario_en_receta", 0.0)
                 nivel = analisis.get("nivel_coincidencia", "bajo")
-                if ratio > mejor_ratio:
-                    mejor_ratio = ratio
-                if nivel in ("alto", "medio") or ratio >= UMBRAL_COINCIDENCIA_MINIMO:
+                # Solo se considera viable si el ingrediente principal de la receta
+                # está entre los ingredientes del usuario (ver ingredient_match.py).
+                if nivel in ("alto", "medio"):
                     chunks_validos.append(ch)
 
         if not chunks_validos and ingredientes != ["ingredientes variados"]:
@@ -459,12 +553,25 @@ async def recommend_endpoint(request: dict):
             tokens_in = llm_client.last_usage.get("input", 0)
             tokens_out = llm_client.last_usage.get("output", 0)
 
+        # --- CONSISTENCIA (IL3.1): ¿la respuesta final realmente usa los ingredientes
+        # pedidos? (sin llamar de nuevo al LLM). Si el LLM falló y devolvió el mensaje
+        # de fallo, la consistencia es 0 y la operación se marca como FAILED de verdad,
+        # en vez de "SUCCESS" con una receta que no tiene relación con lo pedido.
+        es_fallo_llm = is_llm_fallback(respuesta_agente)
+        if es_fallo_llm:
+            consistency_score = 0.0
+        elif ingredientes != ["ingredientes variados"]:
+            consistency_score = analyze_overlap(ingredientes, respuesta_agente).get("ratio_usuario_en_receta", 1.0)
+        else:
+            consistency_score = 1.0
+
         monitor.save_metric(
             latencia_ms=latencia,
             tokens_input=tokens_in,
             tokens_output=tokens_out,
-            status="SUCCESS",
-            tipo_operacion="recomendar"
+            status="FAILED" if es_fallo_llm else "SUCCESS",
+            tipo_operacion="recomendar",
+            consistency_score=consistency_score
         )
 
         return {
@@ -567,8 +674,6 @@ async def chat_endpoint(request: ChatRequest):
         raise HTTPException(status_code=500, detail=f"Error en validación de dominio: {str(err_val)}")
 
     # 2. BÚSQUEDA EN LA BASE DE DATOS LOCAL (RAG Semántico)
-    from app.tools import buscar_recetas_rag, buscar_recetas_en_internet
-
     monitor.log_trace(user_id=request.user_id, step_name="RAG_Retrieval", tool_used="ChromaDB", status="STARTED")
     contexto_rag = buscar_recetas_rag(request.mensaje)
     monitor.log_trace(user_id=request.user_id, step_name="RAG_Retrieval", tool_used="ChromaDB", status="SUCCESS")
@@ -634,14 +739,42 @@ async def chat_endpoint(request: ChatRequest):
             respuesta_limpia = re.sub(patron_duplicado, "", respuesta_limpia, count=1, flags=re.IGNORECASE)
 
         output_final = respuesta_limpia.strip()
+        es_fallo_llm = is_llm_fallback(output_final)
+
+        # --- SI EL USUARIO PIDIÓ EXPLÍCITAMENTE GENERAR UNA RECETA NUEVA, SE GUARDA EN LA BASE PERSISTENTE ---
+        # (nunca si la "respuesta" es en realidad un mensaje de fallo del LLM: no se
+        # debe persistir un error como si fuera una receta real)
+        if es_solicitud_generar_receta(request.mensaje) and output_final and not es_fallo_llm:
+            try:
+                titulo_generado = re.sub(r"[*#_>-]", "", output_final.split("\n")[0]).strip()[:80] or "Receta generada desde Chat"
+                # Misma función de escritura que usa el Recomendador (ver /recipes/save_generated).
+                guardar_receta_usuario(user_id=request.user_id, titulo=titulo_generado, contenido=output_final)
+                herramientas_activadas.append("GuardarRecetaUsuario")
+                output_final += "\n\n✅ Esta receta quedó guardada en tu base de datos persistente."
+                monitor.log_trace(user_id=request.user_id, step_name="Persist_Generated_Recipe", tool_used="GuardarRecetaUsuario", status="SUCCESS")
+            except Exception as err_save:
+                monitor.log_trace(user_id=request.user_id, step_name="Persist_Generated_Recipe", tool_used="GuardarRecetaUsuario", status="ERROR", error_message=str(err_save))
+
+        # --- CONSISTENCIA (IL3.1): fidelidad de la respuesta frente a lo pedido ---
+        # Sin llamar de nuevo al LLM: compara los ingredientes mencionados en el mensaje
+        # del usuario contra el texto final generado. Si no hay ingredientes que
+        # verificar (pregunta general), se deja el valor neutro por defecto (1.0).
+        ingredientes_msg = _extract_ingredients_from_text(request.mensaje)
+        if es_fallo_llm:
+            consistency_score = 0.0
+        elif ingredientes_msg:
+            consistency_score = analyze_overlap(ingredientes_msg, output_final).get("ratio_usuario_en_receta", 1.0)
+        else:
+            consistency_score = 1.0
 
         # PERSISTENCIA DE TELEMETRÍA CON TOKENS REALES PARA EL CHAT
         monitor.save_metric(
             latencia_ms=(time.time() - inicio) * 1000,
             tokens_input=llm_client.last_usage.get("input", 0),
             tokens_output=llm_client.last_usage.get("output", 0),
-            status="SUCCESS",
-            tipo_operacion="chat"
+            status="FAILED" if es_fallo_llm else "SUCCESS",
+            tipo_operacion="chat",
+            consistency_score=consistency_score
         )
 
         return {

@@ -2,7 +2,7 @@ import time
 import re
 from app.llm import LLMClient
 from app.domain_validator import DomainValidator
-from app.planning_agent import PlanningAgent
+from app.planning_agent import PlanningAgent, DynamicAgentExecutor
 from app.rag import RAGSystem
 from app.persistent_memory import persistent_db  # Centralizador de persistencia e interacciones
 from app.tools import COOKAI_TOOLKIT  # Herramientas del sistema unificadas
@@ -18,6 +18,10 @@ llm_client = LLMClient()
 # IL2.3 - Inyección de dependencia del LLM en el generador de planes
 planning_agent = PlanningAgent(llm_client=llm_client)
 rag_system = RAGSystem()
+
+# Fase de Orquestación (IL2.3): ejecuta de verdad los pasos del plan generado
+# (RAG y/o Web) con el filtro estricto de fidelidad a los ingredientes del usuario.
+dynamic_executor = DynamicAgentExecutor()
 
 
 # =========================================================
@@ -177,19 +181,39 @@ def execute_with_planning(
             cookai_monitor.log_trace(user_id=user_id, step_name="Ingredient_Analysis", tool_used="MathToolkit", status="ERROR", error_message=str(err_tool))
 
         # =================================================
-        # 6. CONSTRUCCIÓN DEL PROMPT E INFERENCIA LLM
+        # 6. ORQUESTACIÓN DINÁMICA DEL PLAN (IL2.3 — Fase de Orquestación)
         # =================================================
-        es_busqueda_web = fuente.upper() == "WEB"
-        bloque_contexto = f"=== CONTEXTO ===\n{resultados_rag}"
+        # Ejecuta de verdad el plan validado en el paso 2: recorre sus pasos llamando
+        # a RAG y/o Web con el filtro estricto de fidelidad a los ingredientes del
+        # usuario. Si falla por cualquier motivo, se conserva el camino simple
+        # (prompt directo) como respaldo para no romper la continuidad del servicio.
+        response = None
+        if contexto_externo is None:
+            try:
+                # Reutiliza el plan del paso 2 (ya generado y validado) en vez de que
+                # DynamicAgentExecutor pida uno nuevo al LLM — 1 llamada menos por request.
+                plan_para_ejecutar = plan if isinstance(plan, dict) and plan.get("pasos") else None
+                response = dynamic_executor.run(user_input, plan=plan_para_ejecutar)
+                cookai_monitor.log_trace(user_id=user_id, step_name="Dynamic_Orchestration", tool_used="DynamicAgentExecutor", status="SUCCESS")
+            except Exception as err_dyn:
+                cookai_monitor.log_trace(user_id=user_id, step_name="Dynamic_Orchestration", tool_used="DynamicAgentExecutor", status="ERROR", error_message=str(err_dyn))
+                response = None
 
-        final_prompt = f"Eres CookAI...\n{bloque_contexto}\n{analisis_herramienta_msg}\n{historial_contexto}\n{contexto_preferencias}\nGenera la receta:"
+        if not response or not str(response).strip():
+            # =================================================
+            # 6b. RESPALDO: CONSTRUCCIÓN DE PROMPT SIMPLE E INFERENCIA LLM
+            # =================================================
+            es_busqueda_web = fuente.upper() == "WEB"
+            bloque_contexto = f"=== CONTEXTO ===\n{resultados_rag}"
 
-        try:
-            response = llm_client.generate_response(final_prompt)
-            cookai_monitor.log_trace(user_id=user_id, step_name="LLM_Inference", tool_used="GroqClient", status="SUCCESS")
-        except Exception as err_llm:
-            cookai_monitor.log_trace(user_id=user_id, step_name="LLM_Inference", tool_used="GroqClient", status="ERROR", error_message=str(err_llm))
-            raise err_llm
+            final_prompt = f"Eres CookAI...\n{bloque_contexto}\n{analisis_herramienta_msg}\n{historial_contexto}\n{contexto_preferencias}\nGenera la receta:"
+
+            try:
+                response = llm_client.generate_response(final_prompt)
+                cookai_monitor.log_trace(user_id=user_id, step_name="LLM_Inference", tool_used="GroqClient", status="SUCCESS")
+            except Exception as err_llm:
+                cookai_monitor.log_trace(user_id=user_id, step_name="LLM_Inference", tool_used="GroqClient", status="ERROR", error_message=str(err_llm))
+                raise err_llm
 
         # =================================================
         # SANITIZACIÓN Y LIMPIEZA DE ENCABEZADOS PROHIBIDOS

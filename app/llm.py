@@ -5,6 +5,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Prefijo fijo y detectable de los mensajes de fallo de conexión con el LLM.
+# Permite a los llamadores (main.py) distinguir un fallo real de una receta
+# válida, en vez de tratar en silencio un error de API como una recomendación.
+LLM_FALLBACK_PREFIX = "⚠️ No fue posible conectar con el servicio de IA"
+
+
+def is_llm_fallback(text: str) -> bool:
+    """True si el texto es un mensaje de fallo del LLM y no una respuesta real."""
+    return bool(text) and text.startswith(LLM_FALLBACK_PREFIX)
+
+
 class LLMClient:
     """
     Cliente LLM centralizado para CookAI optimizado para evitar Rate Limits (429).
@@ -114,24 +125,13 @@ REGLAS:
             # En caso de error, dejamos la telemetría en 0 para evitar errores de tipo
             self.last_usage = {"input": 0, "output": 0}
 
-            # FALLBACK DE SEGURIDAD INTERFAZ
+            # FALLBACK HONESTO: antes se devolvía una receta inventada de "Pollo al
+            # Ajillo" fija, sin relación con lo pedido — el usuario no podía distinguir
+            # un fallo de API de una recomendación real ("no asumir recetas"). Ahora se
+            # informa el fallo real para que quede claro que no hubo generación válida.
             return (
-                "Te recomiendo preparar Pollo al Ajillo Gourmet. Esta receta se ajusta perfectamente a lo que buscas, "
-                "aprovechando los ingredientes disponibles y ofreciendo un resultado delicioso con preparación sencilla.\n\n"
-                "**Ingredientes necesarios:**\n"
-                "- Pechuga de pollo\n"
-                "- Dientes de ajo\n"
-                "- Aceite de oliva\n"
-                "- Perejil fresco\n"
-                "- Sal y pimienta\n\n"
-                "**Pasos de preparación:**\n"
-                "1. Trocear la pechuga de pollo en dados medianos.\n"
-                "2. Laminar finamente los dientes de ajo.\n"
-                "3. Calentar aceite de oliva en una sartén a fuego medio.\n"
-                "4. Dorar el pollo por ambos lados hasta que esté dorado.\n"
-                "5. Incorporar el ajo laminado y cocinar 1-2 minutos más.\n"
-                "6. Decorar con perejil fresco picado al servir.\n\n"
-                "**Tip:** Puedes acompañar con arroz blanco o pan fresco para absorber la salsa."
+                f"{LLM_FALLBACK_PREFIX} (Groq). Detalle técnico: {type(e).__name__}. "
+                "Verifica tu conexión y tu GROQ_API_KEY en el archivo .env, y vuelve a intentarlo."
             )
 
     def chat(self, user_message: str) -> str:
@@ -159,8 +159,12 @@ REGLAS:
         except Exception as e:
             print(f"⚠️ Alerta API / Rate Limit en chat: {str(e)}")
             self.last_usage = {"input": 0, "output": 0}
-            # Fallback conversacional fluido
-            return "¡Hola! Respecto a tu consulta culinaria, el uso de ingredientes como el huevo o el tomate es ideal para estructurar salsas y bases proteicas en tus preparaciones. ¿Prefieres ver técnicas de cocción asociadas a estas opciones?"
+            # Fallback honesto (ver nota en generate_response): no inventamos una
+            # respuesta conversacional genérica que aparente ser válida.
+            return (
+                f"{LLM_FALLBACK_PREFIX} (Groq). Detalle técnico: {type(e).__name__}. "
+                "Verifica tu conexión y tu GROQ_API_KEY en el archivo .env, y vuelve a intentarlo."
+            )
 
     def validate_api_key(self) -> bool:
         """Verificar que la API key es válida de forma segura"""

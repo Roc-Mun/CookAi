@@ -174,13 +174,7 @@ class ExecutionContext:
         return self.current_step == len(self.plan.get("pasos", []))
 
 
-    # Lista de herramientas ahora tiene DOS opciones:
-tools = [
-    tu_herramienta_rag_local,  # Opción 1: Tu RAG local (chroma_db)
-    web_search_tool            # Opción 2: El buscador de internet en vivo
-]
-
-# Lista de herramientas ahora tiene DOS opciones (Mantener igual)
+# Lista de herramientas disponibles para el orquestador dinámico: DOS opciones
 tools = [
     tu_herramienta_rag_local,  # Opción 1: Tu RAG local (chroma_db)
     web_search_tool            # Opción 2: El buscador de internet en vivo
@@ -194,9 +188,12 @@ class DynamicAgentExecutor:
         self.llm_client = LLMClient()
         self.planner = PlanningAgent(llm_client=self.llm_client)
 
-    def run(self, query: str) -> str:
-        # 1. Generamos el plan formal usando la estructura académica que ya programaste
-        plan_json = self.planner.create_plan(objective=query)
+    def run(self, query: str, plan: Optional[Dict[str, Any]] = None) -> str:
+        # 1. Reutilizamos el plan si el orquestador ya generó y validó uno (evita
+        # una segunda llamada redundante al LLM solo para volver a planificar lo
+        # mismo — esa duplicación era la principal causa de latencia y de los
+        # 429 Too Many Requests en cascada).
+        plan_json = plan if isinstance(plan, dict) and plan.get("pasos") else self.planner.create_plan(objective=query)
 
         # 2. Inicializamos el contexto de ejecución para trazar el flujo
         contexto_ejecucion = ExecutionContext(plan=plan_json)

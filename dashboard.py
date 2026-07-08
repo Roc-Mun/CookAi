@@ -3,94 +3,123 @@ import requests
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Configuración de página con disposición ancha
+API_BASE = "http://localhost:8000"
+
 st.set_page_config(page_title="Dashboard CookAI", layout="wide")
+st.title("Dashboard de Monitoreo e Indicadores CookAI")
+st.caption("Observabilidad en tiempo real del agente: precision, latencia, consistencia y trazabilidad (ISY0101, IL3.1 / IL3.2).")
 
-# CSS DEFINITIVO: Fuerza texto negro absoluto en todos los componentes de la app
-st.markdown("""
-    <style>
-    /* Selector global para obligar a todo contenedor de Streamlit a usar texto negro */
-    [data-testid="stAppViewContainer"] * {
-        color: #000000 !important;
-    }
-    
-    /* Refuerzo específico para títulos y etiquetas principales */
-    h1, h2, h3, h4, h5, h6, label, p, span {
-        color: #000000 !important;
-        font-weight: bold !important;
-    }
-    
-    /* Ajuste de tamaño y grosor para los valores numéricos de las métricas (KPIs) */
-    [data-testid="stMetricValue"] {
-        font-size: 2.2em !important;
-        font-weight: 800 !important;
-        color: #000000 !important;
-    }
-    
-    /* Ajuste para los nombres de las métricas superiores */
-    [data-testid="stMetricLabel"] {
-        font-size: 1.1em !important;
-        font-weight: 600 !important;
-        color: #222222 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
 
-st.title("📊 Dashboard de Monitoreo e Indicadores CookAi")
+@st.cache_data(ttl=5)
+def cargar_metricas():
+    resp = requests.get(f"{API_BASE}/metrics", timeout=5)
+    resp.raise_for_status()
+    return resp.json()
 
-# 1. Obtener los datos reales de tu API
+
+@st.cache_data(ttl=5)
+def cargar_historial(limit=50):
+    resp = requests.get(f"{API_BASE}/metrics/history", params={"limit": limit}, timeout=5)
+    resp.raise_for_status()
+    return resp.json().get("registros", [])
+
+
 try:
-    response = requests.get("http://localhost:8000/metrics")
-    data = response.json()
-    latencia = data.get("latencia_promedio", 0) / 1000  # Convertir ms a segundos si es necesario
-    tasa_exito = data.get("tasa_exito", 100)
-    total_ops = data.get("total_operaciones", 0)
-    frecuencia_error = 100 - tasa_exito
-except Exception:
-    # Datos de respaldo en caso de que falle la conexión momentáneamente
-    latencia, frecuencia_error, tasa_exito, total_ops = 8.16, 25.0, 75.0, 8
+    metrics = cargar_metricas()
+    historial = cargar_historial()
+except Exception as e:
+    st.error(
+        f"No se pudo conectar con el backend en {API_BASE}. "
+        f"Verifica que este corriendo (uvicorn app.main:app). Detalle: {e}"
+    )
+    st.stop()
 
-# 2. Renderizar los tres indicadores clave superiores (KPIs)
-col1, col2, col3 = st.columns(3)
+df = pd.DataFrame(historial)
+hay_historial = not df.empty
+
+if hay_historial:
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["latencia_seg"] = df["latencia_ms"] / 1000
+    df["tokens_totales"] = df["tokens_input"].fillna(0) + df["tokens_output"].fillna(0)
+
+# --- KPIs agregados (todas las operaciones registradas) ---
+latencia_promedio = metrics.get("latencia_promedio", 0) / 1000
+tasa_exito = metrics.get("tasa_exito", 0)
+total_ops = metrics.get("total_operaciones", 0)
+frecuencia_error = round(100 - tasa_exito, 2)
+operaciones_fallidas = round(total_ops * frecuencia_error / 100)
+
+if hay_historial and df["consistency_score"].notna().any():
+    consistencia_promedio = round(df["consistency_score"].mean() * 100, 1)
+else:
+    consistencia_promedio = None
+
+tokens_promedio = round(df["tokens_totales"].mean(), 0) if hay_historial else 0
+
+col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric(label="⏱️ Latencia Promedio", value=f"{latencia:.2f} seg")
+    st.metric("Latencia promedio", f"{latencia_promedio:.2f} s")
 with col2:
-    st.metric(label="❌ Frecuencia de Errores", value=f"{frecuencia_error}%")
-    st.caption(f"⚠️ {int(total_ops * (frecuencia_error/100))} fallos detectados")
+    st.metric("Tasa de errores", f"{frecuencia_error:.1f} %")
+    st.caption(f"{operaciones_fallidas} de {total_ops} operaciones fallaron")
 with col3:
-    st.metric(label="⚡ Uso de Recursos Promedio", value="197 Tokens")
+    valor_consistencia = f"{consistencia_promedio:.1f} %" if consistencia_promedio is not None else "Sin datos"
+    st.metric("Consistencia promedio", valor_consistencia)
+    st.caption("Fidelidad de la respuesta frente a lo solicitado")
+with col4:
+    st.metric("Tokens promedio por operacion", f"{tokens_promedio:.0f}")
 
-st.markdown("---")
+st.divider()
 
-# 3. Dibujar las secciones inferiores: Gráfico de Línea y Gráfico de Torta
 col_left, col_right = st.columns(2)
 
 with col_left:
-    st.subheader("Evolución de la Latencia por Día")
-    # Datos simulados de evolución temporal para cumplir la visualización de la rúbrica
-    fechas = ["July", "Fri 03", "Jul 05", "Tue 07", "Thu 09"]
-    valores_latencia = [1.2, 2.4, 0.8, 4.3, latencia] # Incorpora tu latencia actual al final
-    df_linea = pd.DataFrame({"Días": fechas, "Latencia (seg)": valores_latencia}).set_index("Días")
-    st.line_chart(df_linea)
+    st.subheader("Evolucion de la latencia")
+    st.caption(f"Ultimas {len(df)} operaciones registradas" if hay_historial else "Sin registros aun")
+    if hay_historial:
+        st.line_chart(df.set_index("timestamp")["latencia_seg"], height=320, y_label="segundos")
+    else:
+        st.info("Aun no hay suficientes operaciones para graficar la evolucion de la latencia.")
 
 with col_right:
-    st.subheader("Consistencia del Sistema (Éxitos vs Errores)")
+    st.subheader("Consistencia del sistema (exito vs error)")
+    if total_ops > 0:
+        fig, ax = plt.subplots(figsize=(4, 4), facecolor="white")
+        labels = ["Exito", "Error"]
+        sizes = [tasa_exito, frecuencia_error]
+        colors = ["#4CAF50", "#E5484D"]
 
-    # figsize=(4, 4) controla las dimensiones exactas para achicar la torta
-    fig, ax = plt.subplots(figsize=(4, 4), facecolor='white')
-    labels = ['Success', 'Error']
-    sizes = [tasa_exito, frecuencia_error]
-    colors = ['#4CAF50', '#FF5722']
+        wedges, texts, autotexts = ax.pie(
+            sizes, labels=labels, autopct="%1.1f%%", startangle=90, colors=colors
+        )
+        for text in texts:
+            text.set_color("#1A1A2E")
+            text.set_weight("bold")
+        for autotext in autotexts:
+            autotext.set_color("#FFFFFF")
+            autotext.set_weight("bold")
+        ax.axis("equal")
+        st.pyplot(fig)
+    else:
+        st.info("Aun no hay operaciones registradas.")
 
-    wedges, texts, autotexts = ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
+st.divider()
 
-    # Forzar las letras externas en negro y los porcentajes internos en blanco
-    for text in texts:
-        text.set_color('#000000')
-        text.set_weight('bold')
-    for autotext in autotexts:
-        autotext.set_color('#FFFFFF')
-        autotext.set_weight('bold')
+st.subheader("Latencia promedio por tipo de operacion")
+if hay_historial:
+    promedio_por_tipo = df.groupby("tipo_operacion")["latencia_seg"].mean().sort_values(ascending=False)
+    st.bar_chart(promedio_por_tipo, height=280, y_label="segundos")
+else:
+    st.info("Aun no hay operaciones registradas.")
 
-    ax.axis('equal')
-    st.pyplot(fig)
+st.divider()
+
+st.subheader("Trazabilidad: ultimas operaciones registradas")
+st.caption("Cada fila corresponde a una ejecucion real del agente (IL3.2), tal como queda en data/logs/cookai_execution.log")
+if hay_historial:
+    tabla = df[["timestamp", "tipo_operacion", "status", "latencia_seg", "consistency_score", "tokens_totales"]].copy()
+    tabla = tabla.sort_values("timestamp", ascending=False)
+    tabla.columns = ["Fecha y hora", "Operacion", "Estado", "Latencia (s)", "Consistencia", "Tokens"]
+    st.dataframe(tabla, use_container_width=True, hide_index=True)
+else:
+    st.info("Aun no hay operaciones registradas.")

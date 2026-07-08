@@ -616,7 +616,7 @@
                                 <strong style="color: #667eea;">📖 ${receta.titulo}</strong><br>
                                 <small style="color: #999;">${receta.preview}</small>
                             </div>
-                            <button type="button" onclick="deleteRecipeItem('${receta.id}', '${archivo.replace(/'/g, "\\'")}')" class="btn-secondary" style="flex: 0; padding: 6px 10px; font-size: 0.85em; background: #fee; color: #c33; border: 1px solid #c33; cursor: pointer; border-radius: 4px;">✕</button>
+                            <button type="button" onclick='deleteRecipeItem(${JSON.stringify(receta.ids || [receta.id])}, ${JSON.stringify(archivo)})' class="btn-secondary" style="flex: 0; padding: 6px 10px; font-size: 0.85em; background: #fee; color: #c33; border: 1px solid #c33; cursor: pointer; border-radius: 4px;">✕</button>
                         </div>
                         `;
                     });
@@ -644,15 +644,20 @@
             }
         }
 
-        async function deleteRecipeItem(itemId, archivo) {
+        async function deleteRecipeItem(itemIds, archivo) {
             if (!confirm('¿Eliminar esta receta?')) return;
 
-            try {
-                const response = await fetch(`${API_BASE}/recipes/item?item_id=${itemId}`, {
-                    method: 'DELETE'
-                });
+            const ids = Array.isArray(itemIds) ? itemIds : [itemIds];
 
-                if (!response.ok) throw new Error('Error eliminando');
+            try {
+                // Una receta puede estar compuesta por varios fragmentos (chunks);
+                // hay que borrarlos todos para no dejar restos huérfanos en la base.
+                for (const id of ids) {
+                    const response = await fetch(`${API_BASE}/recipes/item?item_id=${encodeURIComponent(id)}`, {
+                        method: 'DELETE'
+                    });
+                    if (!response.ok) throw new Error('Error eliminando');
+                }
 
                 showSuccess('✅ Receta eliminada');
                 loadRecipesList();
@@ -679,8 +684,34 @@
             setTimeout(() => successEl.classList.remove('show'), 3000);
         }
 
-        function showResults(content) {
-            document.getElementById('resultsContent').textContent = content;
+        /* ── Renderizado seguro de texto del agente (evita HTML/markdown crudo en pantalla) ── */
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str == null ? '' : String(str);
+            return div.innerHTML;
+        }
+
+        function renderAgentText(text) {
+            // 1) Escapa cualquier HTML que pudiera venir en el texto (defensa ante XSS).
+            // 2) Convierte el markdown básico (**negrita**) que usa el LLM a HTML real.
+            let safe = escapeHtml(text);
+            safe = safe.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            return safe;
+        }
+
+        function buildToolsBadgesHtml(herramientas) {
+            if (!herramientas || !herramientas.length) return '';
+            let html = '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc; font-size: 0.85em; color: #555;">';
+            html += '<strong>🛠️ Herramientas de Agente Usadas:</strong><br>';
+            herramientas.forEach(h => {
+                html += `<span style="display:inline-block; background: #e0f2f1; color: #00695c; padding: 4px 8px; border-radius: 4px; margin: 4px 4px 0 0; font-weight: 600;">${escapeHtml(h)}</span>`;
+            });
+            html += '</div>';
+            return html;
+        }
+
+        function showResults(content, herramientasUsadas) {
+            document.getElementById('resultsContent').innerHTML = renderAgentText(content) + buildToolsBadgesHtml(herramientasUsadas);
             document.getElementById('results').classList.add('show');
         }
 
@@ -729,7 +760,7 @@
 
         function showRejectionBox(msg) {
             const box = document.getElementById("rejectionBox");
-            box.innerHTML = `<strong>⚠️ Sin coincidencia suficiente en tu base de recetas</strong><br><br>${msg}`;
+            box.innerHTML = `<strong>⚠️ Sin coincidencia suficiente en tu base de recetas</strong><br><br>${renderAgentText(msg)}`;
             box.classList.add("show");
         }
 
@@ -770,16 +801,7 @@
                     // Mostrar rechazo con opción de generar
                     showRejectionBox(result.recomendaciones);
                 } else {
-                    let finalHtml = result.recomendaciones;
-                    if (result.herramientas_usadas) {
-                        finalHtml += '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc; font-size: 0.85em; color: #555;">';
-                        finalHtml += '<strong>🛠️ Herramientas de Agente Usadas:</strong><br>';
-                        result.herramientas_usadas.forEach(h => {
-                            finalHtml += `<span style="display:inline-block; background: #e0f2f1; color: #00695c; padding: 4px 8px; border-radius: 4px; margin: 4px 4px 0 0; font-weight: 600;">${h}</span>`;
-                        });
-                        finalHtml += '</div>';
-                    }
-                    showResults(finalHtml);
+                    showResults(result.recomendaciones, result.herramientas_usadas);
                     showSuccess("✅ Recomendaciones generadas!");
                 }
             } catch (error) {
@@ -893,18 +915,9 @@
                 if (!response.ok) throw new Error(`Error ${response.status}`);
 
                 const result = await response.json();
-                let respuesta = result.respuesta || result.output || result.response || "";
+                const respuesta = result.respuesta || result.output || result.response || "";
 
-                if (result.herramientas_usadas) {
-                    respuesta += '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc; font-size: 0.85em; color: #555;">';
-                    respuesta += '<strong>🛠️ Herramientas de Agente Usadas:</strong><br>';
-                    result.herramientas_usadas.forEach(h => {
-                        respuesta += `<span style="display:inline-block; background: #e0f2f1; color: #00695c; padding: 4px 8px; border-radius: 4px; margin: 4px 4px 0 0; font-weight: 600;">${h}</span>`;
-                    });
-                    respuesta += '</div>';
-                }
-
-                showResults(respuesta);
+                showResults(respuesta, result.herramientas_usadas);
                 showSuccess("✅ Respuesta generada!");
                 document.getElementById("formChat").reset();
             } catch (error) {
@@ -951,9 +964,9 @@
                 const resultsContent = document.getElementById('resultsContent');
                 const block = pendingRecetaGenerada.nueva_receta;
                 if (resultsContent.textContent.trim()) {
-                    resultsContent.textContent += "\n\n---\n\n" + block;
+                    resultsContent.innerHTML += renderAgentText("\n\n---\n\n" + block);
                 } else {
-                    resultsContent.textContent = block;
+                    resultsContent.innerHTML = renderAgentText(block);
                     document.getElementById('results').classList.add('show');
                 }
                 showSuccess('✅ Receta guardada en tu base y añadida abajo.');

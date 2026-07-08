@@ -23,6 +23,18 @@ def es_consulta_sustitucion(mensaje: str) -> bool:
         )
     )
 
+def es_solicitud_generar_receta(mensaje: str) -> bool:
+    """Detecta si el usuario pide desde el Chat que se invente/genere una receta nueva
+    (a diferencia de una consulta o ajuste sobre una receta ya existente en el rack)."""
+    m = normalize(mensaje or "")
+    return bool(
+        re.search(
+            r"(genera(me)?|invent(a|ame)|crea(me)?|dame|sug[ié]ren?me|prop[oó]n(me)?)"
+            r".{0,40}(otra |una |nueva )*receta",
+            m,
+        )
+    )
+
 def user_ingredient_in_text(ingredient: str, haystack: str) -> bool:
     ing = normalize(ingredient)
     text = normalize(haystack)
@@ -85,10 +97,30 @@ def analyze_overlap(user_ingredients: list[str], recipe_text: str) -> dict[str, 
     n_lines = len(rec_lines)
     n_lines_match = n_lines - len(lineas_sin_match)
 
+    # ratio_u: de lo que el usuario tiene, cuánto aparece en la receta.
+    # Por sí solo es insuficiente: un usuario con un solo ingrediente muy común
+    # (ej. "sal") calzaría al 100% con casi cualquier receta sin tener nada más.
     ratio_u = (n_found / n_user) if n_user else 0.0
 
-    if n_user == 0:
-        nivel = "bajo" # Seguro para evitar falsos positivos
+    # ratio_receta: de lo que la receta necesita, cuánto cubre el usuario.
+    # Esto es lo que realmente determina si la receta es viable de preparar.
+    ratio_receta = (n_lines_match / n_lines) if n_lines else 0.0
+
+    # Ingrediente principal: la primera línea del bloque de ingredientes suele
+    # ser el componente protagónico de la receta (proteína/base). Si el usuario
+    # no lo tiene, la receta no es viable aunque coincidan ingredientes menores.
+    ingrediente_principal = rec_lines[0] if rec_lines else ""
+    ingrediente_principal_match = bool(rec_lines) and any(
+        user_ingredient_in_text(u, ingrediente_principal) for u in user_clean
+    )
+
+    # Nota: no exigimos cubrir TODA la lista de ingredientes de la receta (ratio_receta)
+    # como condición dura — un usuario normal no lista sal, aceite o pimienta al buscar
+    # recetas. Lo que sí es obligatorio es tener el ingrediente principal.
+    if n_user == 0 or n_lines == 0:
+        nivel = "bajo"  # Seguro para evitar falsos positivos
+    elif not ingrediente_principal_match:
+        nivel = "bajo"
     elif ratio_u >= 0.70:
         nivel = "alto"
     elif ratio_u >= 0.35:
@@ -106,6 +138,9 @@ def analyze_overlap(user_ingredients: list[str], recipe_text: str) -> dict[str, 
         "n_lineas_sin_match": len(lineas_sin_match),
         "lineas_receta_sin_match_usuario": lineas_sin_match[:10],
         "ratio_usuario_en_receta": ratio_u,
+        "ratio_receta_cubierta_por_usuario": ratio_receta,
+        "ingrediente_principal": ingrediente_principal[:80],
+        "ingrediente_principal_coincide": ingrediente_principal_match,
         "nivel_coincidencia": nivel,
     }
 
