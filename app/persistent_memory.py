@@ -21,6 +21,9 @@ class PersistentMemoryDB:
         """Inicializa las tablas relacionales si no existen en el disco."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
+        # WAL: mismo motivo que en monitoring.py (execution_metrics comparte este
+        # mismo archivo de base de datos) — mejora la concurrencia lectura/escritura.
+        cursor.execute("PRAGMA journal_mode=WAL")
 
         # 1. Tabla de conversaciones de largo plazo
         cursor.execute("""

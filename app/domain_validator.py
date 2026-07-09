@@ -23,7 +23,7 @@ class DomainValidator:
 
     # IL3.3 / IE3: Expresiones Regulares para Mitigación de Prompt Injection (Ataques de Evasión)
     PROMPT_INJECTION_PATTERNS = [
-        r"olvida\s+(tus|las)\s+instrucciones",
+        r"(olvida|ignora)\s+(tus|las)\s+instrucciones",
         r"ignore\s+(previous|system)\s+instructions",
         r"act[uú]a\s+como\s+un\s+(hacker|asistente\s+sin\s+restricciones)",
         r"ignore\s+los\s+guardrails",

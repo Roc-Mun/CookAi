@@ -1,11 +1,12 @@
 import time
 import re
+import uuid
 from app.llm import LLMClient
 from app.domain_validator import DomainValidator
 from app.planning_agent import PlanningAgent, DynamicAgentExecutor
 from app.rag import RAGSystem
 from app.persistent_memory import persistent_db  # Centralizador de persistencia e interacciones
-from app.tools import COOKAI_TOOLKIT  # Herramientas del sistema unificadas
+from app.tools import COOKAI_TOOLKIT, buscar_recetas_rag_cacheado  # Herramientas del sistema unificadas
 
 
 # =========================================================
@@ -92,12 +93,23 @@ def execute_with_planning(
         user_input: str,
         user_id: str = "default",
         contexto_externo: str | None = None,
-        fuente: str = "RAG"
+        fuente: str = "RAG",
+        trace_id: str | None = None
 ) -> str:
     """
     Orquestador Central de CookAI con Observabilidad y Sanitización PII integradas.
+
+    trace_id: identificador de la solicitud de punta a punta (IL3.2). Si el llamador
+    (main.py) ya generó uno para correlacionar con sus propios pasos, se reutiliza;
+    si no, se genera aquí para que la ejecución siga siendo trazable igual.
     """
     inicio_pipeline = time.time()
+    trace_id = trace_id or str(uuid.uuid4())
+    # Span raíz de esta ejecución: todos los pasos del pipeline quedan como hijos de este.
+    root_span_id = cookai_monitor.log_trace(
+        user_id=user_id, step_name="Pipeline_Start", tool_used="Orchestrator",
+        status="STARTED", trace_id=trace_id
+    )
 
     # --- APLICACIÓN DE SANITIZACIÓN PII ANTES DE PROCESAR O LOGUEAR (IE6) ---
     if hasattr(domain_validator, 'sanitize_pii'):
@@ -113,11 +125,11 @@ def execute_with_planning(
         # =================================================
         try:
             is_valid, validation_msg = domain_validator.validate_and_filter(user_input)
-            cookai_monitor.log_trace(user_id=user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="SUCCESS" if is_valid else "REJECTED")
+            cookai_monitor.log_trace(user_id=user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="SUCCESS" if is_valid else "REJECTED", trace_id=trace_id, parent_span_id=root_span_id)
             if not is_valid:
                 return validation_msg
         except Exception as err_val:
-            cookai_monitor.log_trace(user_id=user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="ERROR", error_message=str(err_val))
+            cookai_monitor.log_trace(user_id=user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="ERROR", error_message=str(err_val), trace_id=trace_id, parent_span_id=root_span_id)
             raise err_val
 
         # =================================================
@@ -126,9 +138,9 @@ def execute_with_planning(
         try:
             plan = planning_agent.create_plan(user_input)
             plan_valid, plan_msg = planning_agent.validate_plan(plan)
-            cookai_monitor.log_trace(user_id=user_id, step_name="Action_Planning", tool_used="PlanningAgent", status="SUCCESS")
+            cookai_monitor.log_trace(user_id=user_id, step_name="Action_Planning", tool_used="PlanningAgent", status="SUCCESS", trace_id=trace_id, parent_span_id=root_span_id)
         except Exception as err_plan:
-            cookai_monitor.log_trace(user_id=user_id, step_name="Action_Planning", tool_used="PlanningAgent", status="ERROR", error_message=str(err_plan))
+            cookai_monitor.log_trace(user_id=user_id, step_name="Action_Planning", tool_used="PlanningAgent", status="ERROR", error_message=str(err_plan), trace_id=trace_id, parent_span_id=root_span_id)
             plan = []
 
         # =================================================
@@ -147,9 +159,9 @@ def execute_with_planning(
                     f"- Restricciones: {', '.join(prefs.get('dietary_restrictions', []))}\n"
                     f"- Cocinas: {', '.join(prefs.get('favorite_cuisines', []))}"
                 )
-            cookai_monitor.log_trace(user_id=user_id, step_name="Memory_Retrieval", tool_used="PersistentDB", status="SUCCESS")
+            cookai_monitor.log_trace(user_id=user_id, step_name="Memory_Retrieval", tool_used="PersistentDB", status="SUCCESS", trace_id=trace_id, parent_span_id=root_span_id)
         except Exception as err_mem:
-            cookai_monitor.log_trace(user_id=user_id, step_name="Memory_Retrieval", tool_used="PersistentDB", status="ERROR", error_message=str(err_mem))
+            cookai_monitor.log_trace(user_id=user_id, step_name="Memory_Retrieval", tool_used="PersistentDB", status="ERROR", error_message=str(err_mem), trace_id=trace_id, parent_span_id=root_span_id)
 
         # =================================================
         # 4. EJECUCIÓN DE HERRAMIENTAS RAG (CONSULTAS)
@@ -158,10 +170,10 @@ def execute_with_planning(
             if contexto_externo is not None:
                 resultados_rag = contexto_externo
             else:
-                resultados_rag = COOKAI_TOOLKIT["buscar_recetas_rag"](user_input)
-            cookai_monitor.log_trace(user_id=user_id, step_name="Vector_Search", tool_used="ChromaDB_RAG", status="SUCCESS")
+                resultados_rag = buscar_recetas_rag_cacheado(user_input)
+            cookai_monitor.log_trace(user_id=user_id, step_name="Vector_Search", tool_used="ChromaDB_RAG", status="SUCCESS", trace_id=trace_id, parent_span_id=root_span_id)
         except Exception as err_rag:
-            cookai_monitor.log_trace(user_id=user_id, step_name="Vector_Search", tool_used="ChromaDB_RAG", status="ERROR", error_message=str(err_rag))
+            cookai_monitor.log_trace(user_id=user_id, step_name="Vector_Search", tool_used="ChromaDB_RAG", status="ERROR", error_message=str(err_rag), trace_id=trace_id, parent_span_id=root_span_id)
             resultados_rag = "No se encontraron recetas válidas debido a una interrupción técnica."
 
         # =================================================
@@ -176,9 +188,9 @@ def execute_with_planning(
                     texto_receta=resultados_rag
                 )
                 analisis_herramienta_msg = f"Porcentaje de Coincidencia Real: {resultado_analisis.get('porcentaje_coincidencia', '0%')}"
-            cookai_monitor.log_trace(user_id=user_id, step_name="Ingredient_Analysis", tool_used="MathToolkit", status="SUCCESS")
+            cookai_monitor.log_trace(user_id=user_id, step_name="Ingredient_Analysis", tool_used="MathToolkit", status="SUCCESS", trace_id=trace_id, parent_span_id=root_span_id)
         except Exception as err_tool:
-            cookai_monitor.log_trace(user_id=user_id, step_name="Ingredient_Analysis", tool_used="MathToolkit", status="ERROR", error_message=str(err_tool))
+            cookai_monitor.log_trace(user_id=user_id, step_name="Ingredient_Analysis", tool_used="MathToolkit", status="ERROR", error_message=str(err_tool), trace_id=trace_id, parent_span_id=root_span_id)
 
         # =================================================
         # 6. ORQUESTACIÓN DINÁMICA DEL PLAN (IL2.3 — Fase de Orquestación)
@@ -194,9 +206,9 @@ def execute_with_planning(
                 # DynamicAgentExecutor pida uno nuevo al LLM — 1 llamada menos por request.
                 plan_para_ejecutar = plan if isinstance(plan, dict) and plan.get("pasos") else None
                 response = dynamic_executor.run(user_input, plan=plan_para_ejecutar)
-                cookai_monitor.log_trace(user_id=user_id, step_name="Dynamic_Orchestration", tool_used="DynamicAgentExecutor", status="SUCCESS")
+                cookai_monitor.log_trace(user_id=user_id, step_name="Dynamic_Orchestration", tool_used="DynamicAgentExecutor", status="SUCCESS", trace_id=trace_id, parent_span_id=root_span_id)
             except Exception as err_dyn:
-                cookai_monitor.log_trace(user_id=user_id, step_name="Dynamic_Orchestration", tool_used="DynamicAgentExecutor", status="ERROR", error_message=str(err_dyn))
+                cookai_monitor.log_trace(user_id=user_id, step_name="Dynamic_Orchestration", tool_used="DynamicAgentExecutor", status="ERROR", error_message=str(err_dyn), trace_id=trace_id, parent_span_id=root_span_id)
                 response = None
 
         if not response or not str(response).strip():
@@ -210,9 +222,9 @@ def execute_with_planning(
 
             try:
                 response = llm_client.generate_response(final_prompt)
-                cookai_monitor.log_trace(user_id=user_id, step_name="LLM_Inference", tool_used="GroqClient", status="SUCCESS")
+                cookai_monitor.log_trace(user_id=user_id, step_name="LLM_Inference", tool_used="GroqClient", status="SUCCESS", trace_id=trace_id, parent_span_id=root_span_id)
             except Exception as err_llm:
-                cookai_monitor.log_trace(user_id=user_id, step_name="LLM_Inference", tool_used="GroqClient", status="ERROR", error_message=str(err_llm))
+                cookai_monitor.log_trace(user_id=user_id, step_name="LLM_Inference", tool_used="GroqClient", status="ERROR", error_message=str(err_llm), trace_id=trace_id, parent_span_id=root_span_id)
                 raise err_llm
 
         # =================================================
@@ -245,5 +257,5 @@ def execute_with_planning(
         return response
 
     except Exception as e:
-        cookai_monitor.log_trace(user_id=user_id, step_name="Pipeline_Execution", tool_used="Orchestrator", status="CRITICAL_FAILED", error_message=str(e))
+        cookai_monitor.log_trace(user_id=user_id, step_name="Pipeline_Execution", tool_used="Orchestrator", status="CRITICAL_FAILED", error_message=str(e), trace_id=trace_id, parent_span_id=root_span_id)
         return f"Disculpe, ocurrió una inconsistencia interna al procesar su solicitud culinaria. Reporte: {str(e)}"

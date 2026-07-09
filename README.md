@@ -296,6 +296,46 @@ streamlit run dashboard.py
 ```
 ---
 
+# 🧪 Tests Automatizados (IL3.1)
+
+Cubren escenarios variados de validación de dominio, seguridad (prompt injection,
+contenido peligroso, PII) y matching de ingredientes (incluyendo el caso de
+"ingrediente principal" que evita falsos positivos por ingredientes comunes).
+
+```bash
+pip install -r requirements.txt
+python -m pytest tests/ -v
+```
+
+---
+
+# 🐳 Despliegue con Docker
+
+```bash
+docker compose up --build
+```
+
+Levanta el backend (`localhost:8000`) y el dashboard (`localhost:8501`) como
+servicios separados, compartiendo `data/` como volumen persistente.
+
+## Escalabilidad y Sostenibilidad
+
+- **Horizontal**: `docker compose up --scale backend=3` permite correr varias
+  instancias del backend. Limitación actual: SQLite tiene un solo escritor a la
+  vez, por lo que con múltiples instancias escribiendo métricas/recetas concurrentemente
+  se recomendaría migrar `data/agent_memory.db` a Postgres antes de escalar en producción.
+- **WAL mode**: SQLite corre en modo Write-Ahead Logging (activado automáticamente
+  al iniciar), lo que mejora la concurrencia lectura/escritura respecto al modo
+  por defecto, sin necesidad de cambiar de motor de base de datos.
+- **Cache de RAG**: las consultas semánticas repetidas se cachean en memoria
+  (TTL de 5 minutos) para reducir latencia y costo de tokens en consultas similares.
+- **Optimización de costos**: `LLM_MAX_CONCURRENT_CALLS`, `LLM_MAX_RETRIES` y
+  `LLM_TIMEOUT_SECONDS` (variables de entorno opcionales) controlan explícitamente
+  cuántas llamadas simultáneas al LLM puede disparar el proceso, para evitar
+  cascadas de error 429 y su consumo de tokens en reintentos innecesarios.
+
+---
+
 # 📡 Endpoints Principales (REST API)
 
 ## 🔹 POST `/chat`

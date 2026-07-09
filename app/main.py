@@ -3,6 +3,7 @@ import sys
 import shutil
 import re
 import time
+import uuid
 
 # Los logs del sistema usan emojis (⚠️, ✅, 🔍...). En Windows, si stdout/stderr
 # no está en UTF-8 (ej. salida redirigida a archivo), un simple print() truena
@@ -25,7 +26,7 @@ from app.domain_validator import DomainValidator
 from app.agent import execute_with_planning, agent, _extract_ingredients_from_text  # Importamos el agente y su ecosistema
 from app.ingredient_match import bloque_analisis_para_prompt, es_consulta_sustitucion, analyze_overlap, es_solicitud_generar_receta
 from app.monitoring import CookAIMonitor
-from app.tools import buscar_recetas_rag, buscar_recetas_en_internet, guardar_receta_usuario
+from app.tools import buscar_recetas_rag_cacheado, buscar_recetas_en_internet, guardar_receta_usuario
 from app.llm import is_llm_fallback
 
 # Inicialización segura del monitor del ecosistema CookAI
@@ -300,6 +301,8 @@ async def get_metrics_history_endpoint(limit: int = 50):
                 "tokens_output": r[4],
                 "tipo_operacion": r[5],
                 "consistency_score": r[6],
+                "precision_score": r[7],
+                "trace_id": r[8],
             }
             for r in reversed(rows)  # orden cronológico ascendente para graficar
         ]
@@ -462,6 +465,7 @@ async def save_generated_recipe(request: SaveGeneratedRecipeRequest):
 async def recommend_endpoint(request: dict):
     try:
         inicio = time.time()
+        trace_id = str(uuid.uuid4())
         ingredientes_raw = request.get("ingredientes") or ""
         ingredientes = [i.strip() for i in ingredientes_raw] if isinstance(ingredientes_raw, list) else str(ingredientes_raw).strip().split(",")
         ingredientes = [i.strip() for i in ingredientes if i.strip()]
@@ -475,13 +479,17 @@ async def recommend_endpoint(request: dict):
         restricciones_str = ", ".join(restricciones) if isinstance(restricciones, list) else str(restricciones)
         preferencias = request.get("preferencias") or ""
 
-        monitor.log_trace(user_id="endpoint_recomendar", step_name="RAG_Retrieval", tool_used="ChromaDB", status="STARTED")
+        monitor.log_trace(user_id="endpoint_recomendar", step_name="RAG_Retrieval", tool_used="ChromaDB", status="STARTED", trace_id=trace_id)
         query_busqueda = f"recetas con {', '.join(ingredientes)} {preferencias}".strip()
         chunks = rag_system.search_chunks(query_busqueda, top_k=5)
-        monitor.log_trace(user_id="endpoint_recomendar", step_name="RAG_Retrieval", tool_used="ChromaDB", status="SUCCESS")
+        monitor.log_trace(user_id="endpoint_recomendar", step_name="RAG_Retrieval", tool_used="ChromaDB", status="SUCCESS", trace_id=trace_id)
 
-        monitor.log_trace(user_id="endpoint_recomendar", step_name="Threshold_Validation", tool_used="IngredientMatch", status="STARTED")
+        monitor.log_trace(user_id="endpoint_recomendar", step_name="Threshold_Validation", tool_used="IngredientMatch", status="STARTED", trace_id=trace_id)
         chunks_validos = []
+        # Precisión (IL3.1): qué tan bien cubre el usuario los ingredientes de la
+        # receta seleccionada. Se guarda como métrica histórica, no solo se usa
+        # para decidir en el momento y descartarse.
+        mejor_precision = 0.0
 
         if chunks and ingredientes != ["ingredientes variados"]:
             for ch in chunks:
@@ -491,10 +499,11 @@ async def recommend_endpoint(request: dict):
                 # está entre los ingredientes del usuario (ver ingredient_match.py).
                 if nivel in ("alto", "medio"):
                     chunks_validos.append(ch)
+                    mejor_precision = max(mejor_precision, analisis.get("ratio_receta_cubierta_por_usuario", 0.0))
 
         if not chunks_validos and ingredientes != ["ingredientes variados"]:
             motivo = f"⚠️ Sin coincidencia suficiente en tu base de recetas.\n\nTus ingredientes ({', '.join(ingredientes)}) no coinciden suficientemente con la base de datos local. Sin embargo, nuestro sistema ha gestionado el caso con éxito."
-            monitor.log_trace(user_id="endpoint_recomendar", step_name="Threshold_Validation", tool_used="IngredientMatch", status="SUCCESS")
+            monitor.log_trace(user_id="endpoint_recomendar", step_name="Threshold_Validation", tool_used="IngredientMatch", status="SUCCESS", trace_id=trace_id)
 
             # Guardamos la métrica en SUCCESS porque el filtro de negocio controló la restricción correctamente
             monitor.save_metric(
@@ -502,17 +511,20 @@ async def recommend_endpoint(request: dict):
                 tokens_input=0,
                 tokens_output=0,
                 status="SUCCESS",
-                tipo_operacion="recomendar"
+                tipo_operacion="recomendar",
+                precision_score=0.0,
+                trace_id=trace_id
             )
             return {
                 "status": "sin_coincidencia",
                 "recomendaciones": motivo,
                 "output": motivo,
                 "puede_generar": True,
-                "analisis_disponible": False
+                "analisis_disponible": False,
+                "trace_id": trace_id
             }
 
-        monitor.log_trace(user_id="endpoint_recomendar", step_name="Threshold_Validation", tool_used="IngredientMatch", status="SUCCESS")
+        monitor.log_trace(user_id="endpoint_recomendar", step_name="Threshold_Validation", tool_used="IngredientMatch", status="SUCCESS", trace_id=trace_id)
 
         analisis_ing = bloque_analisis_para_prompt(ingredientes, chunks_validos)
 
@@ -527,8 +539,8 @@ async def recommend_endpoint(request: dict):
         if analisis_ing and analisis_ing != "(Sin fragmentos RAG.)":
             mensaje_estructurado += f"\n\n=== ANÁLISIS DE TUS INGREDIENTES EN LA BASE ===\n{analisis_ing}"
 
-        monitor.log_trace(user_id="endpoint_recomendar", step_name="LLM_Generation", tool_used="PlanningAgent", status="STARTED")
-        respuesta_agente = execute_with_planning(mensaje_estructurado, user_id="endpoint_recomendar")
+        monitor.log_trace(user_id="endpoint_recomendar", step_name="LLM_Generation", tool_used="PlanningAgent", status="STARTED", trace_id=trace_id)
+        respuesta_agente = execute_with_planning(mensaje_estructurado, user_id="endpoint_recomendar", trace_id=trace_id)
 
         if "<div" in respuesta_agente:
             respuesta_agente = respuesta_agente.split("<div")[0].strip()
@@ -537,7 +549,7 @@ async def recommend_endpoint(request: dict):
         respuesta_agente = re.sub(r"\*\*Justificación del beneficio:\*\*.*", "", respuesta_agente, flags=re.DOTALL)
         respuesta_agente = respuesta_agente.strip()
 
-        monitor.log_trace(user_id="endpoint_recomendar", step_name="LLM_Generation", tool_used="PlanningAgent", status="SUCCESS")
+        monitor.log_trace(user_id="endpoint_recomendar", step_name="LLM_Generation", tool_used="PlanningAgent", status="SUCCESS", trace_id=trace_id)
 
         fin = time.time()
         latencia = (fin - inicio) * 1000
@@ -571,7 +583,9 @@ async def recommend_endpoint(request: dict):
             tokens_output=tokens_out,
             status="FAILED" if es_fallo_llm else "SUCCESS",
             tipo_operacion="recomendar",
-            consistency_score=consistency_score
+            consistency_score=consistency_score,
+            precision_score=mejor_precision,
+            trace_id=trace_id
         )
 
         return {
@@ -586,7 +600,8 @@ async def recommend_endpoint(request: dict):
                 "Consultando base RAG...",
                 "Evaluando umbral estricto...",
                 "Generando recomendación..."
-            ]
+            ],
+            "trace_id": trace_id
         }
     except Exception as e:
         fin = time.time()
@@ -621,13 +636,15 @@ async def recommend_more_endpoint(request: dict):
             f"5. Tiempo estimado."
         )
 
-        respuesta = execute_with_planning(prompt, user_id="endpoint_recomendar")
+        trace_id = str(uuid.uuid4())
+        respuesta = execute_with_planning(prompt, user_id="endpoint_recomendar", trace_id=trace_id)
         tipo_receta, nueva_receta = _parse_tipo_y_cuerpo_receta_generada(respuesta)
 
         return {
             "status": "success",
             "tipo_receta": tipo_receta,
-            "nueva_receta": nueva_receta
+            "nueva_receta": nueva_receta,
+            "trace_id": trace_id
         }
     except Exception as e:
         return {"status": "error", "nueva_receta": "No se pudo estructurar una alternativa.", "tipo_receta": "Error"}
@@ -640,6 +657,7 @@ async def recommend_more_endpoint(request: dict):
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     inicio = time.time()
+    trace_id = str(uuid.uuid4())
 
     # 1. VALIDACIÓN DE DOMINIO Y LOGGING DE OBSERVABILIDAD (CORREGIDO - PASO 4)
     try:
@@ -647,14 +665,15 @@ async def chat_endpoint(request: ChatRequest):
 
         if not es_valido:
             # CAMBIO CLAVE: Se registra como SUCCESS porque el sistema controló la restricción con éxito
-            monitor.log_trace(user_id=request.user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="SUCCESS")
+            monitor.log_trace(user_id=request.user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="SUCCESS", trace_id=trace_id)
 
             monitor.save_metric(
                 latencia_ms=(time.time() - inicio) * 1000,
                 tokens_input=0,
                 tokens_output=0,
                 status="SUCCESS",
-                tipo_operacion="chat"
+                tipo_operacion="chat",
+                trace_id=trace_id
             )
 
             output_error = f"💡 Nota de CookAI: {mensaje_error} (Recuerda que solo respondo a solicitudes del ámbito gastronómico o culinario)."
@@ -665,18 +684,19 @@ async def chat_endpoint(request: ChatRequest):
                 "message": output_error,
                 "status": "success",
                 "herramientas_usadas": ["Validación de Dominio"],
-                "pasos_agente": ["Validando restricciones del dominio... Fin."]
+                "pasos_agente": ["Validando restricciones del dominio... Fin."],
+                "trace_id": trace_id
             }
 
-        monitor.log_trace(user_id=request.user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="SUCCESS")
+        monitor.log_trace(user_id=request.user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="SUCCESS", trace_id=trace_id)
     except Exception as err_val:
-        monitor.log_trace(user_id=request.user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="ERROR", error_message=str(err_val))
+        monitor.log_trace(user_id=request.user_id, step_name="Domain_Validation", tool_used="DomainValidator", status="ERROR", error_message=str(err_val), trace_id=trace_id)
         raise HTTPException(status_code=500, detail=f"Error en validación de dominio: {str(err_val)}")
 
     # 2. BÚSQUEDA EN LA BASE DE DATOS LOCAL (RAG Semántico)
-    monitor.log_trace(user_id=request.user_id, step_name="RAG_Retrieval", tool_used="ChromaDB", status="STARTED")
-    contexto_rag = buscar_recetas_rag(request.mensaje)
-    monitor.log_trace(user_id=request.user_id, step_name="RAG_Retrieval", tool_used="ChromaDB", status="SUCCESS")
+    monitor.log_trace(user_id=request.user_id, step_name="RAG_Retrieval", tool_used="ChromaDB", status="STARTED", trace_id=trace_id)
+    contexto_rag = buscar_recetas_rag_cacheado(request.mensaje)
+    monitor.log_trace(user_id=request.user_id, step_name="RAG_Retrieval", tool_used="ChromaDB", status="SUCCESS", trace_id=trace_id)
 
     no_hay_local = (
             "No se encontraron recetas" in contexto_rag or
@@ -690,18 +710,18 @@ async def chat_endpoint(request: ChatRequest):
 
     if no_hay_local:
         es_busqueda_web = True
-        monitor.log_trace(user_id=request.user_id, step_name="Web_Contingency", tool_used="BuscarRecetasInternet", status="STARTED")
+        monitor.log_trace(user_id=request.user_id, step_name="Web_Contingency", tool_used="BuscarRecetasInternet", status="STARTED", trace_id=trace_id)
         resultados_web = buscar_recetas_en_internet(request.mensaje)
         contexto_final = f"Información recuperada desde la WEB:\n{resultados_web}"
         herramientas_activadas.append("BuscarRecetasInternet")
-        monitor.log_trace(user_id=request.user_id, step_name="Web_Contingency", tool_used="BuscarRecetasInternet", status="SUCCESS")
+        monitor.log_trace(user_id=request.user_id, step_name="Web_Contingency", tool_used="BuscarRecetasInternet", status="SUCCESS", trace_id=trace_id)
     else:
         contexto_final = f"Información de la BASE DE DATOS LOCAL:\n{contexto_rag}"
         herramientas_activadas.append("RAG (ChromaDB)")
 
     # 3. PROMPT LIMPIO E INFERENCIA DETERMINISTA
     try:
-        monitor.log_trace(user_id=request.user_id, step_name="LLM_Generation", tool_used="Agent", status="STARTED")
+        monitor.log_trace(user_id=request.user_id, step_name="LLM_Generation", tool_used="Agent", status="STARTED", trace_id=trace_id)
 
         prompt_estructurado = (
             f"El usuario solicita: {request.mensaje}\n\n"
@@ -711,8 +731,8 @@ async def chat_endpoint(request: ChatRequest):
             f"tampoco uses etiquetas HTML como <div>, <span> o <style>. Responde puramente en texto legible o Markdown."
         )
 
-        respuesta_raw = execute_with_planning(prompt_estructurado, user_id=request.user_id)
-        monitor.log_trace(user_id=request.user_id, step_name="LLM_Generation", tool_used="Agent", status="SUCCESS")
+        respuesta_raw = execute_with_planning(prompt_estructurado, user_id=request.user_id, trace_id=trace_id)
+        monitor.log_trace(user_id=request.user_id, step_name="LLM_Generation", tool_used="Agent", status="SUCCESS", trace_id=trace_id)
 
         # --- REBANADO MÁXIMO DE SEGURIDAD (ANTIBLOQUES EXTRAÑOS) ---
         for token_corte in ["<div", "Justificación del beneficio", "**Justificación del beneficio:**"]:
@@ -751,9 +771,9 @@ async def chat_endpoint(request: ChatRequest):
                 guardar_receta_usuario(user_id=request.user_id, titulo=titulo_generado, contenido=output_final)
                 herramientas_activadas.append("GuardarRecetaUsuario")
                 output_final += "\n\n✅ Esta receta quedó guardada en tu base de datos persistente."
-                monitor.log_trace(user_id=request.user_id, step_name="Persist_Generated_Recipe", tool_used="GuardarRecetaUsuario", status="SUCCESS")
+                monitor.log_trace(user_id=request.user_id, step_name="Persist_Generated_Recipe", tool_used="GuardarRecetaUsuario", status="SUCCESS", trace_id=trace_id)
             except Exception as err_save:
-                monitor.log_trace(user_id=request.user_id, step_name="Persist_Generated_Recipe", tool_used="GuardarRecetaUsuario", status="ERROR", error_message=str(err_save))
+                monitor.log_trace(user_id=request.user_id, step_name="Persist_Generated_Recipe", tool_used="GuardarRecetaUsuario", status="ERROR", error_message=str(err_save), trace_id=trace_id)
 
         # --- CONSISTENCIA (IL3.1): fidelidad de la respuesta frente a lo pedido ---
         # Sin llamar de nuevo al LLM: compara los ingredientes mencionados en el mensaje
@@ -774,7 +794,8 @@ async def chat_endpoint(request: ChatRequest):
             tokens_output=llm_client.last_usage.get("output", 0),
             status="FAILED" if es_fallo_llm else "SUCCESS",
             tipo_operacion="chat",
-            consistency_score=consistency_score
+            consistency_score=consistency_score,
+            trace_id=trace_id
         )
 
         return {
@@ -789,7 +810,8 @@ async def chat_endpoint(request: ChatRequest):
                 "Consultando coincidencia exacta en ChromaDB...",
                 "Activando contingencia de búsqueda web...",
                 "Formateando salida limpia de observabilidad."
-            ]
+            ],
+            "trace_id": trace_id
         }
 
     except Exception as e:
@@ -798,7 +820,8 @@ async def chat_endpoint(request: ChatRequest):
             tokens_input=0,
             tokens_output=0,
             status="FAILED",
-            tipo_operacion="chat"
+            tipo_operacion="chat",
+            trace_id=trace_id
         )
         error_msg = f"Inconsistencia en el pipeline. Detalles técnicos: {str(e)}"
         return {
@@ -806,7 +829,8 @@ async def chat_endpoint(request: ChatRequest):
             "respuesta": error_msg,
             "response": error_msg,
             "message": error_msg,
-            "status": "success"
+            "status": "success",
+            "trace_id": trace_id
         }
 @app.get("/metrics/debug")
 async def get_raw_metrics_debug():

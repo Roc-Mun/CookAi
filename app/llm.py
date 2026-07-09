@@ -1,5 +1,6 @@
 import os
 import re
+import threading
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -14,6 +15,14 @@ LLM_FALLBACK_PREFIX = "⚠️ No fue posible conectar con el servicio de IA"
 def is_llm_fallback(text: str) -> bool:
     """True si el texto es un mensaje de fallo del LLM y no una respuesta real."""
     return bool(text) and text.startswith(LLM_FALLBACK_PREFIX)
+
+
+# Límite de llamadas concurrentes al LLM que este proceso puede disparar a la vez.
+# Sin esto, varias solicitudes simultáneas (chat + recomendador + orquestación
+# interna, que hace más de una llamada por request) pueden saturar el rate limit
+# de Groq y generar la cascada de 429 Too Many Requests que vimos en el log real.
+_LLM_CONCURRENCIA_MAXIMA = int(os.getenv("LLM_MAX_CONCURRENT_CALLS", "3"))
+_llm_semaphore = threading.Semaphore(_LLM_CONCURRENCIA_MAXIMA)
 
 
 class LLMClient:
@@ -83,10 +92,14 @@ REGLAS:
                 "Añade: GROQ_API_KEY=gsk-..."
             )
 
-        # Conexión limpia a Groq usando el cliente oficial compatible de OpenAI
+        # Conexión limpia a Groq usando el cliente oficial compatible de OpenAI.
+        # max_retries/timeout quedan explícitos y configurables (antes dependían
+        # del valor implícito por defecto del SDK, sin control ni documentación).
         self.client = OpenAI(
             api_key=api_key,
-            base_url="https://api.groq.com/openai/v1"
+            base_url="https://api.groq.com/openai/v1",
+            max_retries=int(os.getenv("LLM_MAX_RETRIES", "3")),
+            timeout=float(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
         )
         # Cambiamos a un modelo 'instant' de 8B parámetros. Evita bloqueos por límite de tokens y responde al instante.
         self.model = "llama-3.1-8b-instant"
@@ -102,15 +115,16 @@ REGLAS:
         Aplica el prompt estructurado requerido por la rúbrica de evaluación.
         """
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self.RECOMENDADOR_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=self.temperature,
-                max_tokens=self.max_tokens
-            )
+            with _llm_semaphore:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self.RECOMENDADOR_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens
+                )
 
             # Extraer y actualizar la volumetría real de tokens
             if hasattr(response, "usage") and response.usage:
@@ -139,15 +153,16 @@ REGLAS:
         Método exclusivo para la pestaña de CHAT conversacional continuo.
         """
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self.CHAT_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_message}
-                ],
-                temperature=0.5,
-                max_tokens=500
-            )
+            with _llm_semaphore:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self.CHAT_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_message}
+                    ],
+                    temperature=0.5,
+                    max_tokens=500
+                )
 
             # Extraer y actualizar la volumetría real de tokens en el chat libre
             if hasattr(response, "usage") and response.usage:

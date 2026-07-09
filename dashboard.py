@@ -54,9 +54,14 @@ if hay_historial and df["consistency_score"].notna().any():
 else:
     consistencia_promedio = None
 
+if hay_historial and "precision_score" in df.columns and df["precision_score"].notna().any():
+    precision_promedio = round(df["precision_score"].mean() * 100, 1)
+else:
+    precision_promedio = None
+
 tokens_promedio = round(df["tokens_totales"].mean(), 0) if hay_historial else 0
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     st.metric("Latencia promedio", f"{latencia_promedio:.2f} s")
 with col2:
@@ -67,6 +72,10 @@ with col3:
     st.metric("Consistencia promedio", valor_consistencia)
     st.caption("Fidelidad de la respuesta frente a lo solicitado")
 with col4:
+    valor_precision = f"{precision_promedio:.1f} %" if precision_promedio is not None else "Sin datos"
+    st.metric("Precision promedio", valor_precision)
+    st.caption("Cobertura de ingredientes de la receta recomendada")
+with col5:
     st.metric("Tokens promedio por operacion", f"{tokens_promedio:.0f}")
 
 st.divider()
@@ -115,11 +124,23 @@ else:
 st.divider()
 
 st.subheader("Trazabilidad: ultimas operaciones registradas")
-st.caption("Cada fila corresponde a una ejecucion real del agente (IL3.2), tal como queda en data/logs/cookai_execution.log")
+st.caption(
+    "Cada fila corresponde a una ejecucion real del agente (IL3.2). El trace_id permite "
+    "buscar todos los pasos de esa misma solicitud en data/logs/cookai_execution.log."
+)
 if hay_historial:
-    tabla = df[["timestamp", "tipo_operacion", "status", "latencia_seg", "consistency_score", "tokens_totales"]].copy()
+    columnas = ["timestamp", "tipo_operacion", "status", "latencia_seg", "consistency_score", "tokens_totales"]
+    nombres = ["Fecha y hora", "Operacion", "Estado", "Latencia (s)", "Consistencia", "Tokens"]
+    if "precision_score" in df.columns:
+        columnas.append("precision_score")
+        nombres.append("Precision")
+    if "trace_id" in df.columns:
+        columnas.append("trace_id")
+        nombres.append("Trace ID")
+
+    tabla = df[columnas].copy()
     tabla = tabla.sort_values("timestamp", ascending=False)
-    tabla.columns = ["Fecha y hora", "Operacion", "Estado", "Latencia (s)", "Consistencia", "Tokens"]
+    tabla.columns = nombres
     st.dataframe(tabla, use_container_width=True, hide_index=True)
 else:
     st.info("Aun no hay operaciones registradas.")

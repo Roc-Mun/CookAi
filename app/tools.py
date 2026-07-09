@@ -1,4 +1,6 @@
 import json
+import time
+import threading
 from typing import Dict, Any, List
 # Importamos las instancias globales centralizadas para evitar bloqueos de archivos
 from app.rag import RAGSystem
@@ -26,6 +28,38 @@ def buscar_recetas_rag(query: str) -> str:
         return "No se encontraron recetas que coincidan con la búsqueda en la base de conocimientos."
 
     return resultados
+
+
+# --- Cache en memoria de corta duración para consultas RAG repetidas ---
+# El mismo texto de búsqueda se repite varias veces dentro de un mismo request
+# (main.py, execute_with_planning, DynamicAgentExecutor) y entre solicitudes
+# similares de distintos usuarios. Cachear evita recalcular embeddings y volver
+# a golpear ChromaDB innecesariamente (optimización de latencia y costo).
+_RAG_CACHE: Dict[str, tuple] = {}
+_RAG_CACHE_LOCK = threading.Lock()
+_RAG_CACHE_TTL_SEGUNDOS = 300  # 5 minutos: la base de recetas no cambia tan seguido
+_RAG_CACHE_MAX_ENTRADAS = 200
+
+
+def buscar_recetas_rag_cacheado(query: str) -> str:
+    """Envuelve buscar_recetas_rag con un cache TTL en memoria (sin cambiar el resultado)."""
+    clave = (query or "").strip().lower()
+    ahora = time.time()
+
+    with _RAG_CACHE_LOCK:
+        entrada = _RAG_CACHE.get(clave)
+        if entrada and (ahora - entrada[0]) < _RAG_CACHE_TTL_SEGUNDOS:
+            return entrada[1]
+
+    resultado = buscar_recetas_rag(query)
+
+    with _RAG_CACHE_LOCK:
+        if len(_RAG_CACHE) >= _RAG_CACHE_MAX_ENTRADAS:
+            clave_mas_vieja = min(_RAG_CACHE, key=lambda k: _RAG_CACHE[k][0])
+            _RAG_CACHE.pop(clave_mas_vieja, None)
+        _RAG_CACHE[clave] = (ahora, resultado)
+
+    return resultado
 
 
 def obtener_sustitutos(ingrediente: str) -> str:
@@ -204,4 +238,4 @@ web_search_tool = Tool(
 # 4. Alias obligatorio para que planning_agent.py no se caiga al importar
 def tu_herramienta_rag_local(query: str) -> str:
     """Enrutador seguro que conecta el agente de planificación con el RAG real."""
-    return buscar_recetas_rag(query)
+    return buscar_recetas_rag_cacheado(query)
