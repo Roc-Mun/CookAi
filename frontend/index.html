@@ -417,7 +417,8 @@
             <p style="margin-top: 10px; font-size: 0.78em; color: #999; max-width: 640px; margin-left: auto; margin-right: auto;">
                 Tus mensajes se guardan para dar continuidad a la conversación y mejorar las recomendaciones.
                 Antes de guardarse o procesarse, se anonimizan automáticamente datos como RUT, correo electrónico
-                y número de teléfono si los incluyes en tu consulta.
+                y número de teléfono si los incluyes en tu consulta, conforme a los principios de tratamiento
+                de datos personales de la Ley N.º 19.628 sobre Protección de la Vida Privada.
             </p>
         </div>
 
@@ -901,6 +902,78 @@
             }
         }
 
+        /** Si corresponde, deja la receta lista para confirmar guardado (mismo modal que el Recomendador). */
+        function ofrecerGuardarSiCorresponde(puedeGuardar, tipoSugerido, contenido) {
+            if (puedeGuardar && contenido) {
+                pendingRecetaGenerada = {
+                    tipo_receta: tipoSugerido || "Receta generada",
+                    nueva_receta: contenido,
+                    yaMostradaEnResultados: true
+                };
+                abrirModalRecetaGenerada(pendingRecetaGenerada.tipo_receta, pendingRecetaGenerada.nueva_receta);
+            }
+        }
+
+        const COOKAI_META_MARCA = " COOKAI_META ";
+
+        /** Camino con streaming real (token por token) vía /chat/stream. */
+        async function sendMessageStreaming(mensaje) {
+            const response = await fetch(`${API_BASE}/chat/stream`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mensaje: mensaje })
+            });
+            if (!response.ok || !response.body) throw new Error(`Error ${response.status}`);
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let acumulado = "";
+
+            document.getElementById('results').classList.add('show');
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                acumulado += decoder.decode(value, { stream: true });
+                const marcaIdx = acumulado.indexOf(COOKAI_META_MARCA);
+                const visible = marcaIdx >= 0 ? acumulado.slice(0, marcaIdx) : acumulado;
+                document.getElementById('resultsContent').innerHTML = renderAgentText(visible);
+            }
+
+            const marcaIdx = acumulado.indexOf(COOKAI_META_MARCA);
+            let textoFinal = acumulado;
+            let metadata = {};
+            if (marcaIdx >= 0) {
+                textoFinal = acumulado.slice(0, marcaIdx).trim();
+                try {
+                    metadata = JSON.parse(acumulado.slice(marcaIdx + COOKAI_META_MARCA.length));
+                } catch (e) { /* metadata ilegible: se ignora, el texto ya se mostró igual */ }
+            }
+            document.getElementById('resultsContent').innerHTML = renderAgentText(textoFinal);
+            showSuccess("✅ Respuesta generada!");
+            document.getElementById("formChat").reset();
+            ofrecerGuardarSiCorresponde(metadata.puede_guardar, metadata.tipo_receta_sugerido, textoFinal);
+        }
+
+        /** Camino de siempre, sin streaming — respaldo si /chat/stream falla por cualquier motivo. */
+        async function sendMessageNoStreaming(mensaje) {
+            const response = await fetch(`${API_BASE}/chat`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mensaje: mensaje })
+            });
+
+            if (!response.ok) throw new Error(`Error ${response.status}`);
+
+            const result = await response.json();
+            const respuesta = result.respuesta || result.output || result.response || "";
+
+            showResults(respuesta, result.herramientas_usadas);
+            showSuccess("✅ Respuesta generada!");
+            document.getElementById("formChat").reset();
+            ofrecerGuardarSiCorresponde(result.puede_guardar, result.tipo_receta_sugerido, result.contenido_generado);
+        }
+
         async function sendMessage(event) {
             event.preventDefault();
             showLoading(true);
@@ -911,20 +984,13 @@
             const mensaje = document.getElementById("mensaje").value;
 
             try {
-                const response = await fetch(`${API_BASE}/chat`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ mensaje: mensaje })
-                });
-
-                if (!response.ok) throw new Error(`Error ${response.status}`);
-
-                const result = await response.json();
-                const respuesta = result.respuesta || result.output || result.response || "";
-
-                showResults(respuesta, result.herramientas_usadas);
-                showSuccess("✅ Respuesta generada!");
-                document.getElementById("formChat").reset();
+                try {
+                    await sendMessageStreaming(mensaje);
+                } catch (streamError) {
+                    // El /chat de siempre queda intacto como respaldo si el streaming
+                    // falla por cualquier motivo (red, navegador sin soporte, etc.).
+                    await sendMessageNoStreaming(mensaje);
+                }
             } catch (error) {
                 showError(`Error: ${error.message}`);
             } finally {
@@ -966,15 +1032,19 @@
                     const err = await response.json().catch(() => ({}));
                     throw new Error(err.detail || `Error ${response.status}`);
                 }
-                const resultsContent = document.getElementById('resultsContent');
-                const block = pendingRecetaGenerada.nueva_receta;
-                if (resultsContent.textContent.trim()) {
-                    resultsContent.innerHTML += renderAgentText("\n\n---\n\n" + block);
-                } else {
-                    resultsContent.innerHTML = renderAgentText(block);
-                    document.getElementById('results').classList.add('show');
+                // En el Chat la receta ya se mostró en resultsContent al recibir la
+                // respuesta; solo hace falta confirmar guardado, no repetir el texto.
+                if (!pendingRecetaGenerada.yaMostradaEnResultados) {
+                    const resultsContent = document.getElementById('resultsContent');
+                    const block = pendingRecetaGenerada.nueva_receta;
+                    if (resultsContent.textContent.trim()) {
+                        resultsContent.innerHTML += renderAgentText("\n\n---\n\n" + block);
+                    } else {
+                        resultsContent.innerHTML = renderAgentText(block);
+                        document.getElementById('results').classList.add('show');
+                    }
                 }
-                showSuccess('✅ Receta guardada en tu base y añadida abajo.');
+                showSuccess('✅ Receta guardada en tu base.');
                 cerrarModalRecetaGenerada();
                 loadRecipesList();
             } catch (error) {

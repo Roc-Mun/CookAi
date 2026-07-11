@@ -42,25 +42,29 @@ class CookAIMonitor:
                        )
                        """)
         # Migración incremental: agrega columnas nuevas sin perder los datos ya guardados
-        # (precision_score para IL3.1, trace_id para correlacionar con el log de trazas IL3.2).
+        # (precision_score para IL3.1, trace_id para correlacionar con el log de trazas IL3.2,
+        # fidelidad_score para Faithfulness: respuesta final vs. contexto RAG recuperado).
         cursor.execute("PRAGMA table_info(execution_metrics)")
         columnas_existentes = {row[1] for row in cursor.fetchall()}
         if "precision_score" not in columnas_existentes:
             cursor.execute("ALTER TABLE execution_metrics ADD COLUMN precision_score REAL")
         if "trace_id" not in columnas_existentes:
             cursor.execute("ALTER TABLE execution_metrics ADD COLUMN trace_id TEXT")
+        if "fidelidad_score" not in columnas_existentes:
+            cursor.execute("ALTER TABLE execution_metrics ADD COLUMN fidelidad_score REAL")
         conn.commit()
         conn.close()
 
     def save_metric(self, latencia_ms, tokens_input=0, tokens_output=0, status="SUCCESS",
-                     tipo_operacion="chat", consistency_score=1.0, precision_score=None, trace_id=None):
+                     tipo_operacion="chat", consistency_score=1.0, precision_score=None,
+                     trace_id=None, fidelidad_score=None):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
                        INSERT INTO execution_metrics
                            (id_ejecucion, timestamp, latencia_ms, tokens_input, tokens_output,
-                            status, tipo_operacion, consistency_score, precision_score, trace_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            status, tipo_operacion, consistency_score, precision_score, trace_id, fidelidad_score)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                        """, (
                            str(uuid.uuid4()),
                            datetime.now().isoformat(),
@@ -71,7 +75,8 @@ class CookAIMonitor:
                            tipo_operacion,
                            consistency_score,
                            precision_score,
-                           trace_id
+                           trace_id,
+                           fidelidad_score
                        ))
         conn.commit()
         conn.close()
@@ -111,7 +116,10 @@ class CookAIMonitor:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        metrics = {"latencia_promedio": 0.0, "tasa_exito": 100.0, "total_operaciones": 0, "precision_promedio": None}
+        metrics = {
+            "latencia_promedio": 0.0, "tasa_exito": 100.0, "total_operaciones": 0,
+            "precision_promedio": None, "fidelidad_promedio": None,
+        }
         try:
             # 1. Total operaciones
             cursor.execute("SELECT COUNT(*) FROM execution_metrics")
@@ -133,6 +141,11 @@ class CookAIMonitor:
                 cursor.execute("SELECT AVG(precision_score) FROM execution_metrics WHERE precision_score IS NOT NULL")
                 fila = cursor.fetchone()
                 metrics["precision_promedio"] = round(fila[0], 2) if fila and fila[0] is not None else None
+
+                # 5. Fidelidad promedio (Faithfulness, IL3.1): respuesta final vs. contexto RAG.
+                cursor.execute("SELECT AVG(fidelidad_score) FROM execution_metrics WHERE fidelidad_score IS NOT NULL")
+                fila_fid = cursor.fetchone()
+                metrics["fidelidad_promedio"] = round(fila_fid[0], 2) if fila_fid and fila_fid[0] is not None else None
         except Exception as e:
             print(f"⚠️ Error al calcular métricas agregadas: {e}")
         finally:
@@ -146,7 +159,7 @@ class CookAIMonitor:
         cursor = conn.cursor()
         cursor.execute("""
                        SELECT timestamp, latencia_ms, status, tokens_input, tokens_output,
-                              tipo_operacion, consistency_score, precision_score, trace_id
+                              tipo_operacion, consistency_score, precision_score, trace_id, fidelidad_score
                        FROM execution_metrics
                        ORDER BY timestamp DESC LIMIT ?
                        """, (limit,))

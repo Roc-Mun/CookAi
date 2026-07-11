@@ -4,6 +4,7 @@ import shutil
 import re
 import time
 import uuid
+import json
 
 # Los logs del sistema usan emojis (⚠️, ✅, 🔍...). En Windows, si stdout/stderr
 # no está en UTF-8 (ej. salida redirigida a archivo), un simple print() truena
@@ -14,9 +15,10 @@ for _stream in (sys.stdout, sys.stderr):
 
 from pathlib import Path
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import iterate_in_threadpool
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -24,7 +26,7 @@ from dotenv import load_dotenv
 from app.rag import RAGSystem
 from app.domain_validator import DomainValidator
 from app.agent import execute_with_planning, agent, _extract_ingredients_from_text  # Importamos el agente y su ecosistema
-from app.ingredient_match import bloque_analisis_para_prompt, es_consulta_sustitucion, analyze_overlap, es_solicitud_generar_receta
+from app.ingredient_match import bloque_analisis_para_prompt, es_consulta_sustitucion, analyze_overlap, es_solicitud_generar_receta, calcular_fidelidad_contexto
 from app.monitoring import CookAIMonitor
 from app.tools import buscar_recetas_rag_cacheado, buscar_recetas_en_internet, guardar_receta_usuario
 from app.llm import is_llm_fallback
@@ -303,6 +305,7 @@ async def get_metrics_history_endpoint(limit: int = 50):
                 "consistency_score": r[6],
                 "precision_score": r[7],
                 "trace_id": r[8],
+                "fidelidad_score": r[9],
             }
             for r in reversed(rows)  # orden cronológico ascendente para graficar
         ]
@@ -577,6 +580,17 @@ async def recommend_endpoint(request: dict):
         else:
             consistency_score = 1.0
 
+        # --- FIDELIDAD / FAITHFULNESS (IL3.1): la respuesta final, ¿se basa en el
+        # contexto realmente recuperado (las recetas del RAG), o inventó contenido
+        # que no está en ninguna de ellas? A diferencia de la consistencia (que
+        # compara contra lo que PIDIÓ el usuario), esto compara contra lo que se
+        # RECUPERÓ como fuente.
+        contexto_recuperado = "\n".join(ch.get("text", "") for ch in chunks_validos)
+        fidelidad_score = (
+            0.0 if es_fallo_llm
+            else calcular_fidelidad_contexto(contexto_recuperado, respuesta_agente)
+        )
+
         monitor.save_metric(
             latencia_ms=latencia,
             tokens_input=tokens_in,
@@ -585,7 +599,8 @@ async def recommend_endpoint(request: dict):
             tipo_operacion="recomendar",
             consistency_score=consistency_score,
             precision_score=mejor_precision,
-            trace_id=trace_id
+            trace_id=trace_id,
+            fidelidad_score=fidelidad_score
         )
 
         return {
@@ -761,19 +776,18 @@ async def chat_endpoint(request: ChatRequest):
         output_final = respuesta_limpia.strip()
         es_fallo_llm = is_llm_fallback(output_final)
 
-        # --- SI EL USUARIO PIDIÓ EXPLÍCITAMENTE GENERAR UNA RECETA NUEVA, SE GUARDA EN LA BASE PERSISTENTE ---
-        # (nunca si la "respuesta" es en realidad un mensaje de fallo del LLM: no se
-        # debe persistir un error como si fuera una receta real)
+        # --- SI EL USUARIO PIDIÓ EXPLÍCITAMENTE GENERAR UNA RECETA NUEVA, SE OFRECE
+        # GUARDARLA (con aprobación explícita del usuario, no automático) ---
+        # Antes esto se guardaba solo; ahora requiere confirmación igual que el
+        # Recomendador ("siempre debe haber una aprobación antes de persistir
+        # contenido generado" — gobernanza humana consistente entre ambas pestañas).
+        puede_guardar = False
+        titulo_generado = None
         if es_solicitud_generar_receta(request.mensaje) and output_final and not es_fallo_llm:
-            try:
-                titulo_generado = re.sub(r"[*#_>-]", "", output_final.split("\n")[0]).strip()[:80] or "Receta generada desde Chat"
-                # Misma función de escritura que usa el Recomendador (ver /recipes/save_generated).
-                guardar_receta_usuario(user_id=request.user_id, titulo=titulo_generado, contenido=output_final)
-                herramientas_activadas.append("GuardarRecetaUsuario")
-                output_final += "\n\n✅ Esta receta quedó guardada en tu base de datos persistente."
-                monitor.log_trace(user_id=request.user_id, step_name="Persist_Generated_Recipe", tool_used="GuardarRecetaUsuario", status="SUCCESS", trace_id=trace_id)
-            except Exception as err_save:
-                monitor.log_trace(user_id=request.user_id, step_name="Persist_Generated_Recipe", tool_used="GuardarRecetaUsuario", status="ERROR", error_message=str(err_save), trace_id=trace_id)
+            titulo_generado = re.sub(r"[*#_>-]", "", output_final.split("\n")[0]).strip()[:80] or "Receta generada desde Chat"
+            puede_guardar = True
+            herramientas_activadas.append("GeneracionPendienteDeAprobacion")
+            monitor.log_trace(user_id=request.user_id, step_name="Generated_Recipe_Awaiting_Approval", tool_used="Chat", status="SUCCESS", trace_id=trace_id)
 
         # --- CONSISTENCIA (IL3.1): fidelidad de la respuesta frente a lo pedido ---
         # Sin llamar de nuevo al LLM: compara los ingredientes mencionados en el mensaje
@@ -787,6 +801,11 @@ async def chat_endpoint(request: ChatRequest):
         else:
             consistency_score = 1.0
 
+        # --- FIDELIDAD / FAITHFULNESS (IL3.1): la respuesta final vs. el contexto
+        # que realmente se le entregó al LLM (contexto_final: RAG local o web),
+        # no contra lo que pidió el usuario (eso ya lo mide consistency_score).
+        fidelidad_score = 0.0 if es_fallo_llm else calcular_fidelidad_contexto(contexto_final, output_final)
+
         # PERSISTENCIA DE TELEMETRÍA CON TOKENS REALES PARA EL CHAT
         monitor.save_metric(
             latencia_ms=(time.time() - inicio) * 1000,
@@ -795,7 +814,8 @@ async def chat_endpoint(request: ChatRequest):
             status="FAILED" if es_fallo_llm else "SUCCESS",
             tipo_operacion="chat",
             consistency_score=consistency_score,
-            trace_id=trace_id
+            trace_id=trace_id,
+            fidelidad_score=fidelidad_score
         )
 
         return {
@@ -811,7 +831,12 @@ async def chat_endpoint(request: ChatRequest):
                 "Activando contingencia de búsqueda web...",
                 "Formateando salida limpia de observabilidad."
             ],
-            "trace_id": trace_id
+            "trace_id": trace_id,
+            # Igual que el Recomendador: el contenido generado no se guarda solo,
+            # el usuario debe confirmarlo (ver /recipes/save_generated).
+            "puede_guardar": puede_guardar,
+            "tipo_receta_sugerido": titulo_generado,
+            "contenido_generado": output_final if puede_guardar else None
         }
 
     except Exception as e:
@@ -832,6 +857,124 @@ async def chat_endpoint(request: ChatRequest):
             "status": "success",
             "trace_id": trace_id
         }
+
+
+# =========================================================
+# CHAT CON STREAMING (endpoint separado, NO reemplaza /chat)
+# =========================================================
+# Streaming real token por token desde Groq, para que el Chat se sienta más
+# reactivo (curso: "mejora percepción de velocidad", recomendado para
+# chatbots). Deliberadamente NO pasa por PlanningAgent/DynamicAgentExecutor
+# (el mecanismo de orquestación que usan /chat, /recommend y /recommend_more)
+# para no tocar ese código compartido: valida dominio, sanitiza PII y busca en
+# RAG (con el mismo cache) igual que /chat, pero genera la respuesta con una
+# llamada directa y streameada. El /chat de siempre sigue intacto como
+# respaldo — el frontend cae a él si este endpoint falla.
+@app.post("/chat/stream")
+async def chat_stream_endpoint(request: ChatRequest):
+    inicio = time.time()
+    trace_id = str(uuid.uuid4())
+    mensaje = domain_validator.sanitize_pii(request.mensaje)
+
+    es_valido, mensaje_error = domain_validator.validate_and_filter(mensaje)
+    monitor.log_trace(
+        user_id=request.user_id, step_name="Domain_Validation", tool_used="DomainValidator",
+        status="SUCCESS" if es_valido else "REJECTED", trace_id=trace_id
+    )
+
+    if not es_valido:
+        texto_rechazo = (
+            f"💡 Nota de CookAI: {mensaje_error} "
+            "(Recuerda que solo respondo a solicitudes del ámbito gastronómico o culinario)."
+        )
+        monitor.save_metric(
+            latencia_ms=(time.time() - inicio) * 1000, status="SUCCESS",
+            tipo_operacion="chat_stream", trace_id=trace_id
+        )
+
+        async def gen_rechazo():
+            yield texto_rechazo
+        return StreamingResponse(gen_rechazo(), media_type="text/plain; charset=utf-8")
+
+    monitor.log_trace(user_id=request.user_id, step_name="RAG_Retrieval", tool_used="ChromaDB", status="STARTED", trace_id=trace_id)
+    contexto_rag = buscar_recetas_rag_cacheado(mensaje)
+    monitor.log_trace(user_id=request.user_id, step_name="RAG_Retrieval", tool_used="ChromaDB", status="SUCCESS", trace_id=trace_id)
+
+    no_hay_local = (
+            "No se encontraron recetas" in contexto_rag or
+            "Debe ingresar" in contexto_rag or
+            not contexto_rag.strip()
+    )
+    if no_hay_local:
+        resultados_web = buscar_recetas_en_internet(mensaje)
+        contexto_final = f"Información recuperada desde la WEB:\n{resultados_web}"
+    else:
+        contexto_final = f"Información de la BASE DE DATOS LOCAL:\n{contexto_rag}"
+
+    prompt_estructurado = (
+        f"El usuario solicita: {mensaje}\n\n"
+        f"Usa EXCLUSIVAMENTE esta información de contexto para armar la receta:\n{contexto_final}\n\n"
+        f"Genera una respuesta gastronómica clara, bien estructurada, con ingredientes y pasos detallados. "
+        f"REGLA CRÍTICA: NO incluyas NUNCA ninguna sección llamada 'Justificación del beneficio', "
+        f"tampoco uses etiquetas HTML como <div>, <span> o <style>. Responde puramente en texto legible o Markdown."
+    )
+
+    async def generador():
+        texto_completo = []
+        try:
+            # iterate_in_threadpool: el cliente de Groq es síncrono; sin esto, cada
+            # chunk bloquearía el event loop y volvería más lento el resto del
+            # servidor mientras dura el streaming (justo lo que no queremos).
+            async for chunk in iterate_in_threadpool(llm_client.generate_chat_stream(prompt_estructurado)):
+                texto_completo.append(chunk)
+                yield chunk
+        except Exception as e:
+            texto_completo.append(f"\n\n⚠️ No fue posible completar la respuesta en streaming: {str(e)}")
+            yield texto_completo[-1]
+
+        # A partir de aquí ya no se entrega texto visible del cuerpo de la
+        # respuesta: se registra la telemetría y, si corresponde, se ofrece
+        # guardar la receta (mismo criterio de aprobación que /chat, ver más
+        # abajo) mediante un marcador que el frontend separa del texto.
+        respuesta_final = "".join(texto_completo).strip()
+        es_fallo = is_llm_fallback(respuesta_final)
+        ingredientes_msg = _extract_ingredients_from_text(mensaje)
+        consistencia = 1.0
+        if es_fallo:
+            consistencia = 0.0
+        elif ingredientes_msg:
+            consistencia = analyze_overlap(ingredientes_msg, respuesta_final).get("ratio_usuario_en_receta", 1.0)
+        fidelidad = 0.0 if es_fallo else calcular_fidelidad_contexto(contexto_final, respuesta_final)
+
+        puede_guardar = False
+        titulo_generado = None
+        if es_solicitud_generar_receta(mensaje) and respuesta_final and not es_fallo:
+            titulo_generado = re.sub(r"[*#_>-]", "", respuesta_final.split("\n")[0]).strip()[:80] or "Receta generada desde Chat"
+            puede_guardar = True
+
+        monitor.log_trace(
+            user_id=request.user_id, step_name="LLM_Generation_Stream", tool_used="GroqClient",
+            status="ERROR" if es_fallo else "SUCCESS", trace_id=trace_id
+        )
+        monitor.save_metric(
+            latencia_ms=(time.time() - inicio) * 1000,
+            status="FAILED" if es_fallo else "SUCCESS",
+            tipo_operacion="chat_stream",
+            consistency_score=consistencia,
+            fidelidad_score=fidelidad,
+            trace_id=trace_id
+        )
+
+        metadata = {
+            "trace_id": trace_id,
+            "puede_guardar": puede_guardar,
+            "tipo_receta_sugerido": titulo_generado,
+        }
+        yield f" COOKAI_META {json.dumps(metadata, ensure_ascii=False)}"
+
+    return StreamingResponse(generador(), media_type="text/plain; charset=utf-8")
+
+
 @app.get("/metrics/debug")
 async def get_raw_metrics_debug():
     try:

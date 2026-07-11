@@ -59,9 +59,14 @@ if hay_historial and "precision_score" in df.columns and df["precision_score"].n
 else:
     precision_promedio = None
 
+if hay_historial and "fidelidad_score" in df.columns and df["fidelidad_score"].notna().any():
+    fidelidad_promedio = round(df["fidelidad_score"].mean() * 100, 1)
+else:
+    fidelidad_promedio = None
+
 tokens_promedio = round(df["tokens_totales"].mean(), 0) if hay_historial else 0
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 with col1:
     st.metric("Latencia promedio", f"{latencia_promedio:.2f} s")
 with col2:
@@ -70,12 +75,16 @@ with col2:
 with col3:
     valor_consistencia = f"{consistencia_promedio:.1f} %" if consistencia_promedio is not None else "Sin datos"
     st.metric("Consistencia promedio", valor_consistencia)
-    st.caption("Fidelidad de la respuesta frente a lo solicitado")
+    st.caption("Respuesta vs. lo solicitado (Answer Relevancy)")
 with col4:
     valor_precision = f"{precision_promedio:.1f} %" if precision_promedio is not None else "Sin datos"
     st.metric("Precision promedio", valor_precision)
     st.caption("Cobertura de ingredientes de la receta recomendada")
 with col5:
+    valor_fidelidad = f"{fidelidad_promedio:.1f} %" if fidelidad_promedio is not None else "Sin datos"
+    st.metric("Fidelidad promedio", valor_fidelidad)
+    st.caption("Respuesta vs. contexto RAG recuperado (Faithfulness)")
+with col6:
     st.metric("Tokens promedio por operacion", f"{tokens_promedio:.0f}")
 
 st.divider()
@@ -134,6 +143,9 @@ if hay_historial:
     if "precision_score" in df.columns:
         columnas.append("precision_score")
         nombres.append("Precision")
+    if "fidelidad_score" in df.columns:
+        columnas.append("fidelidad_score")
+        nombres.append("Fidelidad")
     if "trace_id" in df.columns:
         columnas.append("trace_id")
         nombres.append("Trace ID")

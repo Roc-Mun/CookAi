@@ -181,6 +181,42 @@ REGLAS:
                 "Verifica tu conexión y tu GROQ_API_KEY en el archivo .env, y vuelve a intentarlo."
             )
 
+    def generate_chat_stream(self, prompt: str):
+        """
+        Genera la respuesta token por token (streaming real desde Groq), para el
+        endpoint /chat/stream. Es un método nuevo y separado: NO modifica ni
+        reemplaza generate_response() ni chat(), que siguen usándose tal cual en
+        /recommend y /chat sin streaming.
+
+        Es un generador síncrono a propósito (el cliente de Groq/OpenAI no es
+        async por defecto); quien lo consuma en un contexto async debe iterarlo
+        en un threadpool para no bloquear el event loop (ver main.py).
+        """
+        with _llm_semaphore:
+            try:
+                stream = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self.CHAT_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.5,
+                    max_tokens=500,
+                    stream=True
+                )
+                for evento in stream:
+                    if not evento.choices:
+                        continue
+                    delta = evento.choices[0].delta.content
+                    if delta:
+                        yield delta
+            except Exception as e:
+                print(f"⚠️ Alerta API / Rate Limit en chat streaming: {str(e)}")
+                yield (
+                    f"{LLM_FALLBACK_PREFIX} (Groq). Detalle técnico: {type(e).__name__}. "
+                    "Verifica tu conexión y tu GROQ_API_KEY en el archivo .env, y vuelve a intentarlo."
+                )
+
     def validate_api_key(self) -> bool:
         """Verificar que la API key es válida de forma segura"""
         try:

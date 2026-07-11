@@ -151,6 +151,49 @@ def _titulo_corto(text: str) -> str:
     t = (text or "").strip().split("\n", 1)[0]
     return (t[:80] + "…") if len(t) > 80 else t
 
+# --- Fidelidad (Faithfulness, IL3.1) ---
+# Palabras demasiado comunes en el dominio culinario o gramaticales, que no
+# aportan señal real de si la respuesta "copió" contenido del contexto o no.
+_STOPWORDS_FIDELIDAD = {
+    "para", "como", "esta", "este", "esto", "esos", "esas", "pero", "porque",
+    "cuando", "donde", "hasta", "desde", "sobre", "entre", "cada", "todo",
+    "toda", "todos", "todas", "muy", "mas", "menos", "puede", "puedes",
+    "tiene", "tienes", "estas", "estan", "hacer", "hace", "haciendo",
+    "receta", "recetas", "ingredientes", "ingrediente", "preparacion",
+    "instrucciones", "pasos", "paso", "tiempo", "minutos", "cocina", "cocinar",
+    "sobre", "usando", "usa", "usar", "aqui", "esa", "ese", "que", "con",
+}
+
+
+def _palabras_significativas(texto: str) -> set[str]:
+    palabras = re.findall(r"[a-zA-Z]{4,}", normalize(texto or ""))
+    return {p for p in palabras if p not in _STOPWORDS_FIDELIDAD}
+
+
+def calcular_fidelidad_contexto(contexto_rag: str, respuesta: str) -> float:
+    """
+    Fidelidad / Faithfulness (IL3.1): qué proporción de la respuesta final
+    puede rastrearse al contexto realmente recuperado (RAG o web), para
+    detectar si el modelo agregó pasos o ingredientes que no estaban en la
+    fuente. A diferencia de la consistencia (que compara contra lo que pidió
+    el usuario), esto compara la respuesta contra el CONTEXTO que se le dio
+    al LLM para generarla.
+
+    Sin llamar al LLM: comparación de vocabulario significativo compartido
+    entre ambos textos (misma filosofía determinista que analyze_overlap).
+    Devuelve 0.0-1.0; más alto = más fiel al contexto, más bajo = posible
+    contenido inventado ("alucinación").
+    """
+    vocab_contexto = _palabras_significativas(contexto_rag)
+    vocab_respuesta = _palabras_significativas(respuesta)
+
+    if not vocab_respuesta or not vocab_contexto:
+        return 0.0
+
+    compartidas = vocab_respuesta & vocab_contexto
+    return round(len(compartidas) / len(vocab_respuesta), 3)
+
+
 def bloque_analisis_para_prompt(user_ingredients: list[str], chunks: list[dict]) -> str:
     if not chunks:
         return "(Sin fragmentos RAG.)"
