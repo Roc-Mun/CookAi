@@ -582,6 +582,9 @@
             }
         }
 
+        /** Contenido completo de cada receta cargada, por id, para expandir sin re-consultar al backend. */
+        const recetasContenidoCompleto = {};
+
         async function loadRecipesList() {
             try {
                 const response = await fetch(`${API_BASE}/recipes/detailed`);
@@ -616,13 +619,21 @@
 
                     // Listar recetas individuales
                     recetas.forEach((receta, idx) => {
+                        // Guardamos el contenido completo aparte (no en el HTML) para
+                        // poder mostrarlo al expandir sin volver a pedirlo al backend.
+                        recetasContenidoCompleto[receta.id] = receta.contenido || receta.preview || '';
+
                         html += `
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; margin: 8px 0; background: #f9f9f9; border-radius: 6px;">
-                            <div style="flex: 1;">
-                                <strong style="color: #667eea;">📖 ${receta.titulo}</strong><br>
-                                <small style="color: #999;">${receta.preview}</small>
+                        <div style="padding: 10px; margin: 8px 0; background: #f9f9f9; border-radius: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="flex: 1; cursor: pointer;" onclick="toggleRecetaExpandida(${JSON.stringify(receta.id)})">
+                                    <strong style="color: #667eea;">📖 ${receta.titulo}</strong>
+                                    <span id="arrow-receta-${receta.id}" style="font-size: 0.8em; color: #667eea; margin-left: 8px;">▼ ver receta completa</span><br>
+                                    <small style="color: #999;">${receta.preview}</small>
+                                </div>
+                                <button type="button" onclick='deleteRecipeItem(${JSON.stringify(receta.ids || [receta.id])}, ${JSON.stringify(archivo)})' class="btn-secondary" style="flex: 0; padding: 6px 10px; font-size: 0.85em; background: #fee; color: #c33; border: 1px solid #c33; cursor: pointer; border-radius: 4px; margin-left: 10px;">✕</button>
                             </div>
-                            <button type="button" onclick='deleteRecipeItem(${JSON.stringify(receta.ids || [receta.id])}, ${JSON.stringify(archivo)})' class="btn-secondary" style="flex: 0; padding: 6px 10px; font-size: 0.85em; background: #fee; color: #c33; border: 1px solid #c33; cursor: pointer; border-radius: 4px;">✕</button>
+                            <div id="contenido-receta-${receta.id}" style="display: none; margin-top: 10px; padding: 12px; background: white; border-radius: 6px; border: 1px solid #eee; white-space: pre-wrap; font-size: 0.9em; color: #333; line-height: 1.5;"></div>
                         </div>
                         `;
                     });
@@ -647,6 +658,23 @@
             } else {
                 div.style.display = 'none';
                 arrow.style.transform = 'rotate(-90deg)';
+            }
+        }
+
+        /** Expande o colapsa la receta completa de una fila individual del listado. */
+        function toggleRecetaExpandida(id) {
+            const div = document.getElementById(`contenido-receta-${id}`);
+            const arrow = document.getElementById(`arrow-receta-${id}`);
+            if (!div) return;
+
+            const seVaAAbrir = div.style.display === 'none';
+            if (seVaAAbrir) {
+                div.innerHTML = renderAgentText(recetasContenidoCompleto[id] || '(sin contenido disponible)');
+                div.style.display = 'block';
+                if (arrow) arrow.textContent = '▲ ocultar receta';
+            } else {
+                div.style.display = 'none';
+                if (arrow) arrow.textContent = '▼ ver receta completa';
             }
         }
 

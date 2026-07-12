@@ -218,7 +218,22 @@ def execute_with_planning(
             es_busqueda_web = fuente.upper() == "WEB"
             bloque_contexto = f"=== CONTEXTO ===\n{resultados_rag}"
 
-            final_prompt = f"Eres CookAI...\n{bloque_contexto}\n{analisis_herramienta_msg}\n{historial_contexto}\n{contexto_preferencias}\nGenera la receta:"
+            # REGLA DE FIDELIDAD: este camino se usa cuando ya se validó (o se pasó
+            # explícitamente) el contexto real a utilizar — por eso, a diferencia de
+            # DynamicAgentExecutor, aquí NUNCA se permite inventar una receta distinta.
+            # Se incluye la solicitud original explícitamente: sin esto, el modelo solo
+            # veía el contexto y terminaba repitiendo la receta completa en vez de
+            # responder puntualmente lo que se le preguntó (ej. una sustitución).
+            final_prompt = (
+                "Eres CookAI. Responde específicamente a la SOLICITUD DEL USUARIO usando "
+                "ÚNICAMENTE información respaldada por el CONTEXTO entregado a continuación. "
+                "No inventes ingredientes, pasos, ni recetas distintas a las que aparecen en "
+                "el contexto. Si la solicitud es una pregunta puntual (por ejemplo, un ajuste "
+                "o sustitución), respóndela directamente en vez de repetir la receta completa.\n\n"
+                f"SOLICITUD DEL USUARIO: {user_input}\n\n"
+                f"{bloque_contexto}\n{analisis_herramienta_msg}\n{historial_contexto}\n{contexto_preferencias}\n"
+                "Respuesta:"
+            )
 
             try:
                 response = llm_client.generate_response(final_prompt)

@@ -264,7 +264,8 @@ async def get_recipes_detailed_endpoint():
                     "id": r["ids"][0],
                     "ids": r["ids"],
                     "titulo": r["titulo"],
-                    "preview": r["_full"][:100].replace("\n", " ") + "..."
+                    "preview": r["_full"][:100].replace("\n", " ") + "...",
+                    "contenido": r["_full"]
                 }
                 for r in recetas
             ]
@@ -542,8 +543,19 @@ async def recommend_endpoint(request: dict):
         if analisis_ing and analisis_ing != "(Sin fragmentos RAG.)":
             mensaje_estructurado += f"\n\n=== ANÁLISIS DE TUS INGREDIENTES EN LA BASE ===\n{analisis_ing}"
 
+        # REGLA DE NEGOCIO: el Recomendador solo puede recomendar lo que está en el
+        # RAG — nunca debe inventar una receta alternativa. Se pasa el texto real
+        # de las recetas ya validadas (chunks_validos) como contexto_externo: esto
+        # hace que execute_with_planning() se salte DynamicAgentExecutor (que sí
+        # tiene permiso de inventar) y use el camino simple, siempre fiel al
+        # contexto entregado.
+        contexto_validado = "\n\n---\n\n".join(ch.get("text", "") for ch in chunks_validos)
+
         monitor.log_trace(user_id="endpoint_recomendar", step_name="LLM_Generation", tool_used="PlanningAgent", status="STARTED", trace_id=trace_id)
-        respuesta_agente = execute_with_planning(mensaje_estructurado, user_id="endpoint_recomendar", trace_id=trace_id)
+        respuesta_agente = execute_with_planning(
+            mensaje_estructurado, user_id="endpoint_recomendar", trace_id=trace_id,
+            contexto_externo=contexto_validado
+        )
 
         if "<div" in respuesta_agente:
             respuesta_agente = respuesta_agente.split("<div")[0].strip()
@@ -734,6 +746,13 @@ async def chat_endpoint(request: ChatRequest):
         contexto_final = f"Información de la BASE DE DATOS LOCAL:\n{contexto_rag}"
         herramientas_activadas.append("RAG (ChromaDB)")
 
+    # REGLA DE NEGOCIO: el Chat se basa PRINCIPALMENTE en el RAG (con la web como
+    # respaldo secundario, ya resuelto arriba) para preguntas y ajustes sobre lo
+    # que ya existe en la base — en ese caso NO debe inventar. La única excepción
+    # es cuando el usuario pide explícitamente generar una receta nueva: ahí sí
+    # puede apoyarse en el conocimiento propio del LLM si el contexto no alcanza.
+    quiere_generar_receta = es_solicitud_generar_receta(request.mensaje)
+
     # 3. PROMPT LIMPIO E INFERENCIA DETERMINISTA
     try:
         monitor.log_trace(user_id=request.user_id, step_name="LLM_Generation", tool_used="Agent", status="STARTED", trace_id=trace_id)
@@ -746,7 +765,10 @@ async def chat_endpoint(request: ChatRequest):
             f"tampoco uses etiquetas HTML como <div>, <span> o <style>. Responde puramente en texto legible o Markdown."
         )
 
-        respuesta_raw = execute_with_planning(prompt_estructurado, user_id=request.user_id, trace_id=trace_id)
+        respuesta_raw = execute_with_planning(
+            prompt_estructurado, user_id=request.user_id, trace_id=trace_id,
+            contexto_externo=None if quiere_generar_receta else contexto_final
+        )
         monitor.log_trace(user_id=request.user_id, step_name="LLM_Generation", tool_used="Agent", status="SUCCESS", trace_id=trace_id)
 
         # --- REBANADO MÁXIMO DE SEGURIDAD (ANTIBLOQUES EXTRAÑOS) ---
@@ -783,7 +805,7 @@ async def chat_endpoint(request: ChatRequest):
         # contenido generado" — gobernanza humana consistente entre ambas pestañas).
         puede_guardar = False
         titulo_generado = None
-        if es_solicitud_generar_receta(request.mensaje) and output_final and not es_fallo_llm:
+        if quiere_generar_receta and output_final and not es_fallo_llm:
             titulo_generado = re.sub(r"[*#_>-]", "", output_final.split("\n")[0]).strip()[:80] or "Receta generada desde Chat"
             puede_guardar = True
             herramientas_activadas.append("GeneracionPendienteDeAprobacion")
@@ -911,13 +933,30 @@ async def chat_stream_endpoint(request: ChatRequest):
     else:
         contexto_final = f"Información de la BASE DE DATOS LOCAL:\n{contexto_rag}"
 
-    prompt_estructurado = (
-        f"El usuario solicita: {mensaje}\n\n"
-        f"Usa EXCLUSIVAMENTE esta información de contexto para armar la receta:\n{contexto_final}\n\n"
-        f"Genera una respuesta gastronómica clara, bien estructurada, con ingredientes y pasos detallados. "
-        f"REGLA CRÍTICA: NO incluyas NUNCA ninguna sección llamada 'Justificación del beneficio', "
-        f"tampoco uses etiquetas HTML como <div>, <span> o <style>. Responde puramente en texto legible o Markdown."
-    )
+    # Mismo criterio que /chat: grounded al contexto salvo que se pida explícitamente
+    # generar una receta nueva, donde sí puede apoyarse en conocimiento propio del LLM.
+    quiere_generar_receta = es_solicitud_generar_receta(mensaje)
+
+    if quiere_generar_receta:
+        prompt_estructurado = (
+            f"El usuario pide que generes una receta NUEVA: {mensaje}\n\n"
+            f"Contexto disponible como referencia:\n{contexto_final}\n\n"
+            f"Si el contexto no incluye algo que use de forma protagónica los ingredientes que el "
+            f"usuario mencionó, usa tu conocimiento culinario para crear una receta original y "
+            f"coherente que sí los utilice — no te limites solo al contexto en este caso.\n"
+            f"Genera una respuesta gastronómica clara, bien estructurada, con ingredientes y pasos detallados. "
+            f"REGLA CRÍTICA: NO incluyas NUNCA ninguna sección llamada 'Justificación del beneficio', "
+            f"tampoco uses etiquetas HTML como <div>, <span> o <style>. Responde puramente en texto legible o Markdown."
+        )
+    else:
+        prompt_estructurado = (
+            f"El usuario solicita: {mensaje}\n\n"
+            f"Usa EXCLUSIVAMENTE esta información de contexto para armar la receta; no inventes "
+            f"ingredientes, pasos ni platos que no estén respaldados por este contexto:\n{contexto_final}\n\n"
+            f"Genera una respuesta gastronómica clara, bien estructurada, con ingredientes y pasos detallados. "
+            f"REGLA CRÍTICA: NO incluyas NUNCA ninguna sección llamada 'Justificación del beneficio', "
+            f"tampoco uses etiquetas HTML como <div>, <span> o <style>. Responde puramente en texto legible o Markdown."
+        )
 
     async def generador():
         texto_completo = []
@@ -948,7 +987,7 @@ async def chat_stream_endpoint(request: ChatRequest):
 
         puede_guardar = False
         titulo_generado = None
-        if es_solicitud_generar_receta(mensaje) and respuesta_final and not es_fallo:
+        if quiere_generar_receta and respuesta_final and not es_fallo:
             titulo_generado = re.sub(r"[*#_>-]", "", respuesta_final.split("\n")[0]).strip()[:80] or "Receta generada desde Chat"
             puede_guardar = True
 

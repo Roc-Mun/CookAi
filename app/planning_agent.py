@@ -96,7 +96,7 @@ Debes responder ÚNICAMENTE con un objeto JSON válido, que siga la siguiente es
                 {
                     "numero": 2,
                     "accion": "Ejecutar análisis determinístico de porcentajes de ingredientes y cruce con el perfil del usuario.",
-                    "herramienta_recommended": "analizar_ingredientes",
+                    "herramienta_recomendada": "analizar_ingredientes",
                     "entrada_esperada": "Insumos detectados en el prompt",
                     "salida_esperada": "Nivel de compatibilidad de recetas encontradas",
                     "depende_de": 1
