@@ -1,8 +1,8 @@
 # 🍳 CookAI - Agente Inteligente de Automatización Culinaria
 
-CookAI es un ecosistema avanzado basado en Inteligencia Artificial Generativa y agentes cognitivos para la gestión, planificación y optimización culinaria.
+CookAI es un sistema inteligente de recomendación culinaria basado en Inteligencia Artificial Generativa, arquitectura RAG (Retrieval-Augmented Generation) y agentes cognitivos.
 
-Su arquitectura combina memoria híbrida, recuperación semántica mediante RAG y un sistema de agentes con control de dominio estricto, permitiendo continuidad contextual multiusuario y respuestas altamente consistentes.
+La aplicación integra recuperación semántica mediante ChromaDB, memoria persistente en SQLite, planificación dinámica, observabilidad y un dashboard de monitoreo que permite analizar el rendimiento, la latencia y la consistencia del sistema en tiempo real.
 
 ---
 
@@ -12,7 +12,7 @@ El sistema está alineado con una arquitectura evaluativa estructurada.
 
 ---
 
-## 🧠 IL2.1 — Capacidades del Agente
+## 🧠 Capacidades del Agente
 
 Toolkit centralizado en:
 
@@ -29,7 +29,7 @@ Herramientas deterministas:
 
 ---
 
-## 🧠 IL2.2 / IE3 — Sistema de Memoria
+## 🧠 Sistema de Memoria
 
 Características implementadas:
 
@@ -39,7 +39,7 @@ Características implementadas:
 
 ---
 
-## 🧠 IL2.3 / IE5 — Planificación Secuencial
+## 🧠 Planificación Secuencial
 
 Implementaciones:
 
@@ -51,7 +51,7 @@ Implementaciones:
 
 ---
 
-## 📚 IE4 — Recuperación Semántica (RAG)
+## 📚 Recuperación Semántica (RAG)
 
 Características:
 
@@ -61,7 +61,7 @@ Características:
 
 ---
 
-## 🛡️ IE6 — Control de Frontera de Dominio
+## 🛡️ Control de Frontera de Dominio
 
 Implementado mediante:
 
@@ -82,34 +82,57 @@ CookAI/
 │   ├── ingredient_match.py
 │   ├── llm.py
 │   ├── main.py
+│   ├── metrics_monitor.py
+│   ├── monitoring.py
 │   ├── persistent_memory.py
 │   ├── planning_agent.py
 │   ├── rag.py
+│   ├── semantic_retriever.py
 │   └── tools.py
 │
 ├── data/
 │   ├── chroma_db/
+│   ├── logs/
 │   ├── uploads/
 │   ├── recetas_ejemplo.txt
 │   └── agent_memory.db
 │
 ├── frontend/
+├── temp_uploads
 ├── venv/
 ├── .env
 ├── .gitignore
 ├── dashboard.py
-├── EJEMPLOS_FUNCIONAMIENTO.md
-├── IMPLEMENTACION_COMPLETA.md
 ├── iniciar.bat
 ├── iniciar.ps1
 ├── iniciar.sh
 ├── README.md
 └── requirements.txt
 ```
-
 ---
 
-# 🛠️ Requisitos Previos e Instalación
+## 📈 IE1 — Observabilidad
+
+CookAI incorpora un sistema de observabilidad que registra cada ejecución del agente y permite monitorear su comportamiento mediante métricas persistentes.
+
+Características implementadas:
+
+- Registro de latencia por operación.
+- Conteo de tokens utilizados por el LLM.
+- Registro de errores del sistema.
+- Persistencia histórica en SQLite.
+- Dashboard interactivo desarrollado en Streamlit.
+- Métricas expuestas mediante endpoint `/metrics`.
+---
+
+# 🛠️ Requisitos Previos
+
+- Python 3.11 o superior.
+- Entorno virtual (venv).
+- Dependencias especificadas en `requirements.txt`.
+- Clave de acceso a Groq (`GROQ_API_KEY`).
+
+# 🛠️ Instalación
 
 ## Paso 1: Clonar el proyecto
 
@@ -274,17 +297,24 @@ http://localhost:8000
 
 ---
 
-# 📊 Dashboard de Observabilidad y Monitoreo (IE1, IE2, IE5)
+# 📊 Dashboard de Observabilidad
 
-CookAI cuenta con una interfaz gráfica independiente desarrollada en **Streamlit** diseñada para medir el desempeño, consistencia y trazabilidad del agente en tiempo real.
+CookAI incorpora un dashboard desarrollado en Streamlit para visualizar en tiempo real el comportamiento del sistema.
 
-El dashboard expone interactivamente los datos capturados durante los ciclos de ejecución.
+El panel obtiene la información desde la base de datos SQLite donde se almacenan las métricas de observabilidad, permitiendo analizar el comportamiento histórico del sistema.
 
-### Métricas Clave Implementadas:
-- ⏱️ **Latencia Promedio (IE2):** Mide en segundos el tiempo de respuesta del LLM (Groq) ante variabilidad de datos.
-- ❌ **Frecuencia de Errores (IE1):** Evalúa la precisión y consistencia determinando la tasa porcentual de fallos del sistema.
-- ⚡ **Uso de Recursos (IE2):** Monitorea el consumo computacional mediante el conteo promedio de tokens procesados por interacción.
-- 📈 **Consistencia Visual:** Gráficos de línea temporales para analizar cuellos de botella y diagramas de sectores para la relación éxito/error.
+## Indicadores disponibles
+
+- ⏱️ Latencia promedio.
+- ⚡ Tokens promedio utilizados por consulta.
+- ✅ Tasa de éxito.
+- ❌ Tasa de errores.
+- 📈 Evolución temporal de la latencia.
+- 🥧 Consistencia del sistema (éxito/error).
+- 📋 Historial completo de operaciones.
+- 🔎 Latencia por tipo de operación.
+
+Toda la información queda almacenada de forma persistente para facilitar la trazabilidad y el análisis histórico del sistema.
 
 ## 🚀 Cómo Ejecutar el Dashboard
 
@@ -296,56 +326,20 @@ streamlit run dashboard.py
 ```
 ---
 
-# 🧪 Tests Automatizados (IL3.1)
-
-Cubren escenarios variados de validación de dominio, seguridad (prompt injection,
-contenido peligroso, PII) y matching de ingredientes (incluyendo el caso de
-"ingrediente principal" que evita falsos positivos por ingredientes comunes).
-
-```bash
-pip install -r requirements.txt
-python -m pytest tests/ -v
-```
-
----
-
-# 🐳 Despliegue con Docker
-
-```bash
-docker compose up --build
-```
-
-Levanta el backend (`localhost:8000`) y el dashboard (`localhost:8501`) como
-servicios separados, compartiendo `data/` como volumen persistente.
-
-## Escalabilidad y Sostenibilidad
-
-- **Horizontal**: `docker compose up --scale backend=3` permite correr varias
-  instancias del backend. Limitación actual: SQLite tiene un solo escritor a la
-  vez, por lo que con múltiples instancias escribiendo métricas/recetas concurrentemente
-  se recomendaría migrar `data/agent_memory.db` a Postgres antes de escalar en producción.
-- **WAL mode**: SQLite corre en modo Write-Ahead Logging (activado automáticamente
-  al iniciar), lo que mejora la concurrencia lectura/escritura respecto al modo
-  por defecto, sin necesidad de cambiar de motor de base de datos.
-- **Cache de RAG**: las consultas semánticas repetidas se cachean en memoria
-  (TTL de 5 minutos) para reducir latencia y costo de tokens en consultas similares.
-- **Optimización de costos**: `LLM_MAX_CONCURRENT_CALLS`, `LLM_MAX_RETRIES` y
-  `LLM_TIMEOUT_SECONDS` (variables de entorno opcionales) controlan explícitamente
-  cuántas llamadas simultáneas al LLM puede disparar el proceso, para evitar
-  cascadas de error 429 y su consumo de tokens en reintentos innecesarios.
-
----
-
 # 📡 Endpoints Principales (REST API)
 
 ## 🔹 POST `/chat`
 
 Pipeline ejecutado:
 
-- Validación de dominio
-- Planificación de consulta
-- RAG + Búsqueda Web en Vivo.
-- Orquestación inteligente con filtro estricto de ingredientes y generación de respuesta estructurada.
+- Validación de dominio.
+- Recuperación semántica mediante RAG.
+- Búsqueda web como contingencia cuando la información local es insuficiente.
+- Planificación de acciones.
+- Recuperación de memoria persistente.
+- Análisis de ingredientes.
+- Generación de respuesta mediante Llama 3 (Groq).
+- Registro de métricas de observabilidad.
 
 ---
 
@@ -353,11 +347,25 @@ Pipeline ejecutado:
 
 Funcionalidad:
 
-- Recibe ingredientes.
-- Ejecuta razonamiento interno.
-- Devuelve recetas optimizadas.
+- Recibe ingredientes ingresados por el usuario.
+- Recupera recetas mediante RAG.
+- Evalúa coincidencia mediante IngredientMatch.
+- Genera recomendaciones utilizando planificación dinámica.
+- Registra métricas de observabilidad.
 
 ---
+
+## 🔹 GET `/metrics`
+
+Entrega las métricas de observabilidad del sistema en formato JSON:
+
+- Latencia promedio.
+- Tasa de éxito.
+- Total de operaciones.
+- Consistencia.
+- Tokens promedio.
+
+Este endpoint consolida las métricas registradas durante la ejecución y es utilizado tanto por el dashboard para tareas de monitoreo y evaluación del sistema.
 
 # 🧪 Prueba Rápida del Sistema
 
@@ -378,22 +386,31 @@ curl -X POST "http://localhost:8000/chat" \
 ```
 
 ---
+# 📋 Persistencia de Métricas
+
+Cada ejecución del agente queda registrada en SQLite para mantener trazabilidad histórica.
+
+Los registros almacenan:
+
+- UUID de la operación.
+- Fecha y hora.
+- Tipo de operación.
+- Latencia.
+- Tokens utilizados.
+- Estado de ejecución.
+- Consistencia.
+
+Esta información es utilizada posteriormente por el dashboard para generar indicadores, gráficos de rendimiento, realizar análisis históricos, calcular indicadores de desempeño y respaldar el proceso de observabilidad del sistema.
+
+---
 
 # 🎓 Conclusión
 
-CookAI representa una arquitectura de agentes inteligentes modular y escalable diseñada bajo principios de:
+CookAI integra Inteligencia Artificial Generativa, recuperación semántica mediante RAG, memoria persistente y planificación dinámica para ofrecer recomendaciones culinarias contextualizadas.
 
-- Desacoplamiento de dependencias e inyección de clientes centrales (LLMClient).
-- Memoria híbrida persistente corto y largo plazo.
-- Recuperación semántica avanzada combinada con fallback dinámico a la web en tiempo real.
-- Control estricto de dominio sin falsos negativos en solicitudes culinarias complejas.
-- Pipeline cognitivo planificado bajo el estándar Plan-and-Execute.
+La incorporación de observabilidad permitió medir objetivamente el comportamiento del sistema mediante métricas de latencia, consumo de tokens, tasa de errores y consistencia. Gracias a la persistencia de estos datos en SQLite y a su visualización mediante un dashboard interactivo, es posible monitorear continuamente el rendimiento, detectar cuellos de botella y facilitar futuras optimizaciones de CookAI.
 
-El sistema está optimizado para:
-
-- Ejecución local.
-- Evaluación académica.
-- Escalabilidad futura.
+Esta arquitectura convierte a CookAI en una solución modular, escalable y preparada para futuras extensiones, manteniendo un enfoque centrado en la confiabilidad y el monitoreo continuo.
 
 ---
 
