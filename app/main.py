@@ -552,8 +552,16 @@ async def recommend_endpoint(request: dict):
         contexto_validado = "\n\n---\n\n".join(ch.get("text", "") for ch in chunks_validos)
 
         monitor.log_trace(user_id="endpoint_recomendar", step_name="LLM_Generation", tool_used="PlanningAgent", status="STARTED", trace_id=trace_id)
+        # user_id único por solicitud (no el fijo "endpoint_recomendar" compartido
+        # por todos los usuarios): el Recomendador es un formulario de un solo
+        # disparo sin continuidad conversacional, y como execute_with_planning usa
+        # el user_id para recuperar historial de memoria persistente, reutilizar
+        # el mismo id fijo entre usuarios distintos filtraba interacciones ajenas
+        # (ej. una consulta de salmón de otra persona apareciendo en una
+        # recomendación de pollo sin relación). El trace_id ya es único por
+        # solicitud, así que no hay historial previo que recuperar bajo ese id.
         respuesta_agente = execute_with_planning(
-            mensaje_estructurado, user_id="endpoint_recomendar", trace_id=trace_id,
+            mensaje_estructurado, user_id=trace_id, trace_id=trace_id,
             contexto_externo=contexto_validado
         )
 

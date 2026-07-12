@@ -135,13 +135,21 @@ def execute_with_planning(
         # =================================================
         # 2. GENERACIÓN Y VALIDACIÓN DEL PLAN DE ACCIÓN
         # =================================================
-        try:
-            plan = planning_agent.create_plan(user_input)
-            plan_valid, plan_msg = planning_agent.validate_plan(plan)
-            cookai_monitor.log_trace(user_id=user_id, step_name="Action_Planning", tool_used="PlanningAgent", status="SUCCESS", trace_id=trace_id, parent_span_id=root_span_id)
-        except Exception as err_plan:
-            cookai_monitor.log_trace(user_id=user_id, step_name="Action_Planning", tool_used="PlanningAgent", status="ERROR", error_message=str(err_plan), trace_id=trace_id, parent_span_id=root_span_id)
-            plan = []
+        # Este plan solo lo consume DynamicAgentExecutor en el paso 6. Cuando ya
+        # se recibió contexto_externo (modo RAG-estricto: Recomendador o Chat sin
+        # generar receta nueva), el paso 6 se salta ese ejecutor por completo, así
+        # que generar el plan aquí sería una llamada al LLM completamente
+        # desperdiciada — duplicaba la latencia de cada request y contribuía a
+        # los 429 Too Many Requests en cascada observados en producción.
+        plan = None
+        if contexto_externo is None:
+            try:
+                plan = planning_agent.create_plan(user_input)
+                plan_valid, plan_msg = planning_agent.validate_plan(plan)
+                cookai_monitor.log_trace(user_id=user_id, step_name="Action_Planning", tool_used="PlanningAgent", status="SUCCESS", trace_id=trace_id, parent_span_id=root_span_id)
+            except Exception as err_plan:
+                cookai_monitor.log_trace(user_id=user_id, step_name="Action_Planning", tool_used="PlanningAgent", status="ERROR", error_message=str(err_plan), trace_id=trace_id, parent_span_id=root_span_id)
+                plan = []
 
         # =================================================
         # 3. RECUPERACIÓN DE MEMORIA Y PREFERENCIAS

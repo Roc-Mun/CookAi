@@ -626,7 +626,7 @@
                         html += `
                         <div style="padding: 10px; margin: 8px 0; background: #f9f9f9; border-radius: 6px;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <div style="flex: 1; cursor: pointer;" onclick="toggleRecetaExpandida(${JSON.stringify(receta.id)})">
+                                <div style="flex: 1; cursor: pointer;" onclick='toggleRecetaExpandida(${JSON.stringify(receta.id)})'>
                                     <strong style="color: #667eea;">📖 ${receta.titulo}</strong>
                                     <span id="arrow-receta-${receta.id}" style="font-size: 0.8em; color: #667eea; margin-left: 8px;">▼ ver receta completa</span><br>
                                     <small style="color: #999;">${receta.preview}</small>
